@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- Automatically generated file. DO NOT MODIFY -->
+
+    <!-- Value from build type: debug -->
+    <integer name="react_native_dev_server_port">8081</integer>
+    <!-- Value from build type: debug -->
+    <integer name="react_native_inspector_proxy_port">8081</integer>
+    <!-- Value from default config. -->
+    <string name="API_URL" translatable="false">"http://ec2-elb-978379039.us-east-1.elb.amazonaws.com:3000"</string>
+    <!-- Value from default config. -->
+    <string name="PLANNING_URL" translatable="false">"http://ec2-elb-978379039.us-east-1.elb.amazonaws.com:3002"</string>
+
+</resources>

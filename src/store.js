@@ -7,7 +7,8 @@ import React, {
   useState,
 } from "react";
 import { Alert } from "react-native";
-import { getBodegas } from "./features/api"; // usa src/features/api/index.js
+import { getBodegas, insertBodega, updateBodegaApi } from "./features/api";
+
 
 /* ----------------- Storage (web/RN fallback) ----------------- */
 const memStore = {
@@ -264,24 +265,125 @@ export function AppProvider({ children }) {
   /* ----------------- Acciones bodegas ----------------- */
 
   const saveBodega = async (payload) => {
-    // Nota: esto sigue siendo local; si luego quieres que pegue al backend, lo adaptamos.
-    const normalized = { active: true, ...payload };
-    if (payload.id) {
-      setBodegas((prev) =>
-        prev.map((b) => (b.id === payload.id ? normalized : b))
+    try {
+      const creating = !payload.id;
+      const usuarioId = currentUser?.id || 1;
+
+      // Body según msApiCubicaje:
+      // - el backend nos pidió usuario_id
+      // - por compatibilidad mandamos también id_usuario
+      const body = creating
+        ? {
+            nombre: (payload.nombre || "").trim(),
+            ciudad: (payload.ciudad || "").trim(),
+            direccion: (payload.direccion || "").trim(),
+            ancho: Number(payload.ancho),
+            largo: Number(payload.largo),
+            alto: Number(payload.alto),
+            usuario_id: usuarioId,
+            id_usuario: usuarioId,
+          }
+        : {
+            id_bodega: payload.id,
+            nombre: (payload.nombre || "").trim(),
+            ciudad: (payload.ciudad || "").trim(),
+            direccion: (payload.direccion || "").trim(),
+            ancho: Number(payload.ancho),
+            largo: Number(payload.largo),
+            alto: Number(payload.alto),
+            usuario_id: usuarioId,
+            id_usuario: usuarioId,
+            is_active: payload.active === false ? 0 : 1,
+          };
+
+      console.log(
+        "[saveBodega]",
+        creating ? "CREATE" : "UPDATE",
+        "body:",
+        body
       );
-    } else {
-      setBodegas((prev) => [
-        ...prev,
-        { ...normalized, id: genId() },
-      ]);
+
+      const apiRes = creating
+        ? await insertBodega(body)
+        : await updateBodegaApi(body);
+
+      console.log("[saveBodega] raw response:", apiRes);
+
+      // Si reqHelper nos devuelve un AxiosError
+      if (apiRes?.isAxiosError || apiRes?._isAxiosError) {
+        const data = apiRes.response?.data;
+        console.log("[saveBodega] backend error payload:", data || apiRes);
+
+        const msg =
+          data?.body ||
+          data?.message ||
+          data?.error ||
+          apiRes.message ||
+          "El servidor rechazó la solicitud.";
+        throw new Error(msg);
+      }
+
+      // Formato { error:true, body:"..." } desde el backend
+      if (apiRes && apiRes.error) {
+        console.log("[saveBodega] backend error payload:", apiRes);
+        throw new Error(apiRes.body || apiRes.message || "Error en API de bodegas.");
+      }
+
+      // ✅ Si no hubo error, recargamos bodegas desde la API
+      const listRes = await getBodegas();
+      const lista = Array.isArray(listRes?.body) ? listRes.body : listRes;
+
+      if (!Array.isArray(lista)) {
+        console.log("[saveBodega] listRes inesperado:", listRes);
+        throw new Error("Formato inesperado al recargar bodegas.");
+      }
+
+      const normalizadas = lista.map((b) => ({
+        id: b.id_bodega ?? b.id,
+        nombre: b.nombre,
+        ciudad: b.ciudad,
+        direccion: b.direccion,
+        ancho: Number(b.ancho),
+        alto: Number(b.alto),
+        largo: Number(b.largo),
+        active:
+          b.is_active !== undefined
+            ? b.is_active !== 0
+            : (b.active ?? true) !== false,
+      }));
+
+      setBodegas(normalizadas);
+
+      Alert.alert(
+        "Bodega",
+        creating
+          ? "Creada correctamente en la base de datos."
+          : "Actualizada correctamente en la base de datos."
+      );
+    } catch (error) {
+      console.log(
+        "[saveBodega] ERROR:",
+        error?.message,
+        error?.response?.data || ""
+      );
+
+      Alert.alert(
+        "Error",
+        `No se pudo guardar la bodega.\n${
+          error?.message ||
+          error?.response?.data?.message ||
+          "Revisa la conexión y los campos obligatorios."
+        }`
+      );
     }
   };
+
 
   const deleteBodegaOrphanItems = async (id) => {
     const b = bodegas.find((x) => x.id === id);
     const lastName = b?.nombre || "—";
 
+    // Dejar ítems huérfanos con referencia al último nombre
     setItems((prev) =>
       prev.map((it) =>
         it.bodegaId === id
@@ -290,6 +392,7 @@ export function AppProvider({ children }) {
       )
     );
 
+    // Quitar la bodega del estado
     setBodegas((prev) => prev.filter((bd) => bd.id !== id));
   };
 
@@ -298,6 +401,7 @@ export function AppProvider({ children }) {
     if (!b) return;
 
     if (active === false) {
+      // Si se desactiva, soltamos ítems
       setItems((prev) =>
         prev.map((it) =>
           it.bodegaId === id
@@ -323,10 +427,7 @@ export function AppProvider({ children }) {
         prev.map((it) => (it.id === payload.id ? normalized : it))
       );
     } else {
-      setItems((prev) => [
-        ...prev,
-        { ...normalized, id: genId() },
-      ]);
+      setItems((prev) => [...prev, { ...normalized, id: genId() }]);
     }
   };
 
@@ -336,19 +437,17 @@ export function AppProvider({ children }) {
 
   /* ----------------- Solicitudes de desactivación ----------------- */
 
-  const createDeactivateRequest = async ({
-    bodegaId,
-    userId,
-    motivo = "",
-  }) => {
+  const createDeactivateRequest = async ({ bodegaId, userId, motivo = "" }) => {
     const exists = requests.some(
       (r) => r.bodegaId === bodegaId && r.status === "pending"
     );
-    if (exists)
+
+    if (exists) {
       return Alert.alert(
         "Solicitud",
         "Ya existe una solicitud pendiente para esta bodega."
       );
+    }
 
     const req = {
       id: genId(),
@@ -360,6 +459,7 @@ export function AppProvider({ children }) {
     };
 
     setRequests((prev) => [req, ...prev]);
+
     Alert.alert(
       "Solicitud enviada",
       "Un administrador revisará tu solicitud."
@@ -404,6 +504,7 @@ export function AppProvider({ children }) {
     );
   };
 
+
   /* ----------------- Auth ----------------- */
 
   const onLogin = async (user) => {
@@ -431,16 +532,13 @@ export function AppProvider({ children }) {
   return (
     <Ctx.Provider
       value={{
-        // estado
         currentUser,
         bodegas,
         items,
         requests,
-        // helpers de consulta
         itemsByBodega,
         metricsOf,
         pendingCount,
-        // acciones
         saveBodega,
         deleteBodegaOrphanItems,
         setBodegaActive,
@@ -451,7 +549,6 @@ export function AppProvider({ children }) {
         rejectRequest,
         onLogin,
         onLogout,
-        // re-export helpers
         vol,
         clampInt,
         itemVolTotal,
@@ -462,4 +559,5 @@ export function AppProvider({ children }) {
       {children}
     </Ctx.Provider>
   );
+
 }

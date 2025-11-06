@@ -1,6 +1,7 @@
 import Config from 'react-native-config';
 import reqHelper from '../helpers/reqHelper';
 
+// PLANNINGS (msCubicajePlanning)
 const getPlannings = async () =>
   await reqHelper(`${Config.PLANNING_URL}/api/plannings`, 'get');
 
@@ -13,6 +14,7 @@ const getItemsByPlanning = async (id) =>
 const updatePlanning = async (data) =>
   await reqHelper(`${Config.PLANNING_URL}/api/plannings`, 'patch', data);
 
+// ITEMS (msApiCubicaje)
 const getItems = async () =>
   await reqHelper(`${Config.API_URL}/api/items`, 'get');
 
@@ -22,6 +24,7 @@ const insertItem = async (data) =>
 const updateItem = async (data) =>
   await reqHelper(`${Config.API_URL}/api/items`, 'put', data);
 
+// SPACES (msApiCubicaje)
 const getSpaces = async () =>
   await reqHelper(`${Config.API_URL}/api/spaces`, 'get');
 
@@ -31,12 +34,22 @@ const insertSpace = async (data) =>
 const updateSpace = async (data) =>
   await reqHelper(`${Config.API_URL}/api/spaces`, 'put', data);
 
+// TYPES (msApiCubicaje)
 const getTypes = async () =>
   await reqHelper(`${Config.API_URL}/api/types`, 'get');
 
-//: obtener bodegas desde tu API principal
-const getBodegas = async () =>
-  await reqHelper(`${Config.API_URL}/api/bodegas`, 'get');
+// BODEGAS (msApiCubicaje)
+const getBodegas = async () => {
+  const url = `${Config.API_URL}/api/bodegas`;
+  console.log("[getBodegas] URL:", url);
+  return await reqHelper(url, "get");
+};
+
+const insertBodega = async (data) =>
+  await reqHelper(`${Config.API_URL}/api/bodegas`, "post", data);
+
+const updateBodegaApi = async (data) =>
+  await reqHelper(`${Config.API_URL}/api/bodegas`, "put", data);
 
 export {
   getPlannings,
@@ -50,5 +63,7 @@ export {
   insertSpace,
   updateSpace,
   getTypes,
-  getBodegas, 
+  getBodegas,
+  insertBodega,
+  updateBodegaApi,
 };

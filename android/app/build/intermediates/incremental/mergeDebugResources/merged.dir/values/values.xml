@@ -662,8 +662,8 @@
     <item quantity="one"><ns1:g id="count">%d</ns1:g> new notification</item>
     <item quantity="other"><ns1:g id="count">%d</ns1:g> new notifications</item>
   </plurals>
-    <string name="API_URL" translatable="false">"http://ec2-elb-978379039.us-east-1.elb.amazonaws.com:3000"</string>
-    <string name="PLANNING_URL" translatable="false">"http://ec2-elb-978379039.us-east-1.elb.amazonaws.com:3002"</string>
+    <string name="API_URL" translatable="false">"http://10.0.2.2:3000"</string>
+    <string name="PLANNING_URL" translatable="false">"http://10.0.2.2:3002"</string>
     <string name="abc_action_bar_home_description">Navigate home</string>
     <string name="abc_action_bar_up_description">Navigate up</string>
     <string name="abc_action_menu_overflow_description">More options</string>

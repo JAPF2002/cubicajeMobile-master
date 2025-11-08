@@ -7,8 +7,17 @@ import React, {
   useState,
 } from "react";
 import { Alert } from "react-native";
-import { getBodegas, insertBodega, updateBodegaApi } from "./features/api";
-
+import {
+  getBodegas,
+  insertBodega,
+  updateBodegaApi,
+  deleteBodegaApi,
+  getItems,
+  insertItem,
+  updateItem,
+  deleteItemApi,
+  getCategories,
+} from "./features/api";
 
 /* ----------------- Storage (web/RN fallback) ----------------- */
 const memStore = {
@@ -57,30 +66,21 @@ export const K_BODEGAS = "@bodegas";
 export const K_ITEMS = "@items";
 export const K_USERS = "@users";
 export const K_SESSION = "@session";
-export const K_LOGIN_LOG = "@login_log";
-export const K_EMAIL_CODES = "@email_codes";
 export const K_BDG_REQUESTS = "@bodega_requests";
 
-/* ----------------- Helpers compartidos ----------------- */
+/* ----------------- Helpers ----------------- */
 export const num = (v) => {
-  const n = parseFloat(String(v).replace(",", "."));
+  const n = parseFloat(String(v ?? "").replace(",", "."));
   return Number.isFinite(n) ? n : 0;
 };
 
-export const vol = (ancho, alto, largo) => num(ancho) * num(alto) * num(largo); // m³
+export const vol = (ancho, alto, largo) =>
+  num(ancho) * num(alto) * num(largo); // m³
 
 export const clampInt = (v, min = 1) =>
   Math.max(parseInt(v || "0", 10) || 0, min);
 
 export const genId = () => Math.random().toString(36).slice(2, 9);
-
-export const hash = (s) => {
-  try {
-    return btoa(unescape(encodeURIComponent(s)));
-  } catch {
-    return s;
-  }
-};
 
 export const itemVolTotal = (it) =>
   vol(it.ancho, it.alto, it.largo) * clampInt(it.cantidad, 1);
@@ -103,29 +103,7 @@ export function pesoAClase(pesoKg) {
   return "N/D";
 }
 
-export function validateStrongPassword(pw) {
-  if (typeof pw !== "string")
-    return { ok: false, msg: "Contraseña inválida." };
-  if (pw.length < 12 || pw.length > 16)
-    return {
-      ok: false,
-      msg: "La contraseña debe tener entre 12 y 16 caracteres.",
-    };
-  if (!/[a-z]/.test(pw))
-    return { ok: false, msg: "Debe incluir al menos 1 letra minúscula." };
-  if (!/[A-Z]/.test(pw))
-    return { ok: false, msg: "Debe incluir al menos 1 letra mayúscula." };
-  if (!/[0-9]/.test(pw))
-    return { ok: false, msg: "Debe incluir al menos 1 número." };
-  if (!/[^A-Za-z0-9]/.test(pw))
-    return {
-      ok: false,
-      msg: "Debe incluir al menos 1 carácter especial.",
-    };
-  return { ok: true, msg: "OK" };
-}
-
-/* ----------------- Contexto de la App ----------------- */
+/* ----------------- Contexto ----------------- */
 const Ctx = createContext(null);
 export const useApp = () => useContext(Ctx);
 
@@ -134,27 +112,26 @@ export function AppProvider({ children }) {
   const [bodegas, setBodegas] = useState([]);
   const [items, setItems] = useState([]);
   const [requests, setRequests] = useState([]);
+  const [categorias, setCategorias] = useState([]);
 
-  // Cargar datos iniciales:
-  // - items, requests, users, session desde storage
-  // - bodegas desde API (con fallback a storage)
+  /* ---------- Carga inicial ---------- */
   useEffect(() => {
     (async () => {
       try {
-        // 1) Otros datos desde storage
-        const [itemsStr, reqsStr, usersStr, sessionStr] = await Promise.all([
-          LocalStore.getItem(K_ITEMS),
-          LocalStore.getItem(K_BDG_REQUESTS),
-          LocalStore.getItem(K_USERS),
-          LocalStore.getItem(K_SESSION),
-        ]);
+        const [itemsStr, reqsStr, usersStr, sessionStr] =
+          await Promise.all([
+            LocalStore.getItem(K_ITEMS),
+            LocalStore.getItem(K_BDG_REQUESTS),
+            LocalStore.getItem(K_USERS),
+            LocalStore.getItem(K_SESSION),
+          ]);
 
-        const it = JSON.parse(itemsStr || "[]");
+        const itLocal = JSON.parse(itemsStr || "[]");
         const reqs = JSON.parse(reqsStr || "[]");
         const users = JSON.parse(usersStr || "[]");
         const session = JSON.parse(sessionStr || "null");
 
-        setItems(Array.isArray(it) ? it : []);
+        setItems(Array.isArray(itLocal) ? itLocal : []);
         setRequests(Array.isArray(reqs) ? reqs : []);
 
         if (session && Array.isArray(users) && users.length) {
@@ -169,55 +146,18 @@ export function AppProvider({ children }) {
           }
         }
 
-        // 2) Bodegas desde la API
-        try {
-          const res = await getBodegas();
-          console.log("Respuesta /api/bodegas:", res);
-
-          // Puede venir como { body: [...] } o directamente [...]
-          const lista = Array.isArray(res?.body) ? res.body : res;
-
-          if (Array.isArray(lista)) {
-            const normalizadas = lista.map((b) => ({
-              id: b.id_bodega || b.id,
-              nombre: b.nombre,
-              direccion: b.direccion,
-              ciudad: b.ciudad,
-              ancho: b.ancho,
-              alto: b.alto,
-              largo: b.largo,
-              active:
-                b.is_active !== undefined
-                  ? b.is_active !== 0
-                  : b.active !== 0 && b.active !== false,
-            }));
-
-            setBodegas(normalizadas);
-            await LocalStore.setItem(
-              K_BODEGAS,
-              JSON.stringify(normalizadas)
-            );
-          } else {
-            console.log(
-              "Formato inesperado en /api/bodegas, uso storage local si existe"
-            );
-            const bStr = await LocalStore.getItem(K_BODEGAS);
-            const b = JSON.parse(bStr || "[]");
-            setBodegas(Array.isArray(b) ? b : []);
-          }
-        } catch (eApi) {
-          console.log("Error llamando /api/bodegas:", eApi?.message);
-          const bStr = await LocalStore.getItem(K_BODEGAS);
-          const b = JSON.parse(bStr || "[]");
-          setBodegas(Array.isArray(b) ? b : []);
-        }
+        await Promise.all([
+          reloadBodegasSafe(),
+          reloadItemsSafe(),
+          loadCategoriasSafe(),
+        ]);
       } catch (e) {
         console.log("Error inicializando store:", e?.message);
       }
     })();
   }, []);
 
-  /* ----------------- Persistencia ----------------- */
+  /* ---------- Persistencia local ---------- */
   useEffect(() => {
     LocalStore.setItem(K_BODEGAS, JSON.stringify(bodegas));
   }, [bodegas]);
@@ -230,9 +170,128 @@ export function AppProvider({ children }) {
     LocalStore.setItem(K_BDG_REQUESTS, JSON.stringify(requests));
   }, [requests]);
 
-  /* ----------------- Derivados ----------------- */
+  /* ---------- Helpers internos: API ---------- */
 
-  // Agrupar items por bodega
+  const reloadBodegas = async () => {
+    const res = await getBodegas();
+
+    const lista = Array.isArray(res?.body)
+      ? res.body
+      : Array.isArray(res)
+      ? res
+      : [];
+
+    if (!Array.isArray(lista)) {
+      throw new Error("Formato inesperado en /api/bodegas");
+    }
+
+    const normalizadas = lista.map((b) => ({
+      id: b.id_bodega ?? b.id,
+      nombre: b.nombre,
+      ciudad: b.ciudad,
+      direccion: b.direccion,
+      ancho: num(b.ancho),
+      alto: num(b.alto),
+      largo: num(b.largo),
+      active:
+        b.is_active !== undefined
+          ? b.is_active !== 0
+          : (b.active ?? true) !== false,
+    }));
+
+    setBodegas(normalizadas);
+    await LocalStore.setItem(K_BODEGAS, JSON.stringify(normalizadas));
+  };
+
+  const reloadBodegasSafe = async () => {
+    try {
+      await reloadBodegas();
+    } catch (e) {
+      console.log("[reloadBodegasSafe] ERROR:", e?.message);
+      const bStr = await LocalStore.getItem(K_BODEGAS);
+      const b = JSON.parse(bStr || "[]");
+      setBodegas(Array.isArray(b) ? b : []);
+    }
+  };
+
+  const reloadItems = async () => {
+    const res = await getItems();
+
+    const lista = Array.isArray(res?.body)
+      ? res.body
+      : Array.isArray(res)
+      ? res
+      : [];
+
+    if (!Array.isArray(lista)) {
+      throw new Error("Formato inesperado en /api/items");
+    }
+
+    const normalizadas = lista.map((it) => ({
+      id: it.id_item ?? it.id,
+      nombre: it.nombre,
+      ancho: num(it.ancho),
+      alto: num(it.alto),
+      largo: num(it.largo),
+      peso: num(it.peso),
+      // soporta 'cantidad' o 'qty', y si no hay, 1
+      cantidad: clampInt(
+        it.cantidad ?? it.qty ?? 1,
+        1
+      ),
+      bodegaId:
+        it.id_bodega ?? it.bodega_id ?? it.bodegaId ?? null,
+      id_categoria:
+        it.id_categoria ?? it.categoriaId ?? null,
+      // 'clase' es solo lógica front, si algún día la devuelves la usamos
+      clase: it.clase || pesoAClase(it.peso),
+    }));
+
+    setItems(normalizadas);
+    await LocalStore.setItem(K_ITEMS, JSON.stringify(normalizadas));
+  };
+
+  const reloadItemsSafe = async () => {
+    try {
+      await reloadItems();
+    } catch (e) {
+      console.log("[reloadItemsSafe] ERROR:", e?.message);
+      const itStr = await LocalStore.getItem(K_ITEMS);
+      const it = JSON.parse(itStr || "[]");
+      setItems(Array.isArray(it) ? it : []);
+    }
+  };
+
+  const loadCategoriasSafe = async () => {
+    try {
+      const res = await getCategories();
+
+      const lista = Array.isArray(res?.body)
+        ? res.body
+        : Array.isArray(res)
+        ? res
+        : [];
+
+      const norm = lista
+        .map((c) => ({
+          id: c.id_categoria ?? c.id,
+          nombre: c.nombre ?? c.name,
+        }))
+        .filter((c) => c.id && c.nombre);
+
+      setCategorias(norm);
+      console.log(
+        "[loadCategoriasSafe] OK:",
+        norm.length,
+        "categorías"
+      );
+    } catch (e) {
+      console.log("[loadCategoriasSafe] ERROR:", e?.message);
+    }
+  };
+
+  /* ---------- Derivados ---------- */
+
   const itemsByBodega = useMemo(() => {
     const m = new Map();
     for (const it of items) {
@@ -244,14 +303,11 @@ export function AppProvider({ children }) {
     return m;
   }, [items]);
 
-  // Métricas por bodega
   const metricsOf = (b) => {
     const capacidad = vol(b.ancho, b.alto, b.largo);
     const arr = itemsByBodega.get(b.id) || [];
     const ocupado = arr.reduce(
-      (acc, it) =>
-        acc +
-        vol(it.ancho, it.alto, it.largo) * clampInt(it.cantidad, 1),
+      (acc, it) => acc + itemVolTotal(it),
       0
     );
     const unidades = arr.reduce(
@@ -259,187 +315,178 @@ export function AppProvider({ children }) {
       0
     );
     const libre = Math.max(capacidad - ocupado, 0);
-    return { capacidad, ocupado, libre, count: arr.length, unidades };
+    return {
+      capacidad,
+      ocupado,
+      libre,
+      count: arr.length,
+      unidades,
+    };
   };
 
-  /* ----------------- Acciones bodegas ----------------- */
+  /* ---------- Acciones BODEGAS ---------- */
 
   const saveBodega = async (payload) => {
     try {
       const creating = !payload.id;
       const usuarioId = currentUser?.id || 1;
 
-      // Body según msApiCubicaje:
-      // - el backend nos pidió usuario_id
-      // - por compatibilidad mandamos también id_usuario
-      const body = creating
-        ? {
-            nombre: (payload.nombre || "").trim(),
-            ciudad: (payload.ciudad || "").trim(),
-            direccion: (payload.direccion || "").trim(),
-            ancho: Number(payload.ancho),
-            largo: Number(payload.largo),
-            alto: Number(payload.alto),
-            usuario_id: usuarioId,
-            id_usuario: usuarioId,
-          }
-        : {
-            id_bodega: payload.id,
-            nombre: (payload.nombre || "").trim(),
-            ciudad: (payload.ciudad || "").trim(),
-            direccion: (payload.direccion || "").trim(),
-            ancho: Number(payload.ancho),
-            largo: Number(payload.largo),
-            alto: Number(payload.alto),
-            usuario_id: usuarioId,
-            id_usuario: usuarioId,
-            is_active: payload.active === false ? 0 : 1,
-          };
+      const body = {
+        ...payload,
+        id_bodega: payload.id,
+        usuario_id: usuarioId,
+        id_usuario: usuarioId,
+      };
 
-      console.log(
-        "[saveBodega]",
-        creating ? "CREATE" : "UPDATE",
-        "body:",
-        body
-      );
-
-      const apiRes = creating
-        ? await insertBodega(body)
-        : await updateBodegaApi(body);
-
-      console.log("[saveBodega] raw response:", apiRes);
-
-      // Si reqHelper nos devuelve un AxiosError
-      if (apiRes?.isAxiosError || apiRes?._isAxiosError) {
-        const data = apiRes.response?.data;
-        console.log("[saveBodega] backend error payload:", data || apiRes);
-
-        const msg =
-          data?.body ||
-          data?.message ||
-          data?.error ||
-          apiRes.message ||
-          "El servidor rechazó la solicitud.";
-        throw new Error(msg);
+      if (creating) {
+        await insertBodega(body);
+      } else {
+        await updateBodegaApi(body);
       }
 
-      // Formato { error:true, body:"..." } desde el backend
-      if (apiRes && apiRes.error) {
-        console.log("[saveBodega] backend error payload:", apiRes);
-        throw new Error(apiRes.body || apiRes.message || "Error en API de bodegas.");
-      }
-
-      // ✅ Si no hubo error, recargamos bodegas desde la API
-      const listRes = await getBodegas();
-      const lista = Array.isArray(listRes?.body) ? listRes.body : listRes;
-
-      if (!Array.isArray(lista)) {
-        console.log("[saveBodega] listRes inesperado:", listRes);
-        throw new Error("Formato inesperado al recargar bodegas.");
-      }
-
-      const normalizadas = lista.map((b) => ({
-        id: b.id_bodega ?? b.id,
-        nombre: b.nombre,
-        ciudad: b.ciudad,
-        direccion: b.direccion,
-        ancho: Number(b.ancho),
-        alto: Number(b.alto),
-        largo: Number(b.largo),
-        active:
-          b.is_active !== undefined
-            ? b.is_active !== 0
-            : (b.active ?? true) !== false,
-      }));
-
-      setBodegas(normalizadas);
-
+      await reloadBodegas();
       Alert.alert(
         "Bodega",
         creating
-          ? "Creada correctamente en la base de datos."
-          : "Actualizada correctamente en la base de datos."
+          ? "Creada correctamente."
+          : "Actualizada correctamente."
       );
     } catch (error) {
-      console.log(
-        "[saveBodega] ERROR:",
-        error?.message,
-        error?.response?.data || ""
-      );
-
+      console.log("[saveBodega] ERROR:", error?.message);
       Alert.alert(
         "Error",
         `No se pudo guardar la bodega.\n${
-          error?.message ||
-          error?.response?.data?.message ||
-          "Revisa la conexión y los campos obligatorios."
+          error?.message || "Revisa la conexión."
         }`
       );
     }
   };
 
-
-  const deleteBodegaOrphanItems = async (id) => {
-    const b = bodegas.find((x) => x.id === id);
-    const lastName = b?.nombre || "—";
-
-    // Dejar ítems huérfanos con referencia al último nombre
-    setItems((prev) =>
-      prev.map((it) =>
-        it.bodegaId === id
-          ? { ...it, bodegaId: null, lastBodegaName: lastName }
-          : it
-      )
-    );
-
-    // Quitar la bodega del estado
-    setBodegas((prev) => prev.filter((bd) => bd.id !== id));
-  };
-
   const setBodegaActive = async (id, active) => {
-    const b = bodegas.find((x) => x.id === id);
-    if (!b) return;
+    try {
+      await updateBodegaApi({
+        id_bodega: id,
+        is_active: active ? 1 : 0,
+      });
 
-    if (active === false) {
-      // Si se desactiva, soltamos ítems
-      setItems((prev) =>
-        prev.map((it) =>
-          it.bodegaId === id
-            ? { ...it, bodegaId: null, lastBodegaName: b.nombre }
-            : it
-        )
+      await reloadBodegas();
+      Alert.alert(
+        "Bodega",
+        active
+          ? "Bodega activada correctamente."
+          : "Bodega desactivada correctamente."
+      );
+    } catch (error) {
+      console.log("[setBodegaActive] ERROR:", error?.message);
+      Alert.alert(
+        "Error",
+        `No se pudo cambiar el estado de la bodega.\n${
+          error?.message || "Revisa la conexión."
+        }`
       );
     }
-
-    setBodegas((prev) =>
-      prev.map((x) => (x.id === id ? { ...x, active } : x))
-    );
   };
 
-  /* ----------------- Acciones items ----------------- */
+  const deleteBodegaOrphanItems = async (id, force = false) => {
+    try {
+      const res = await deleteBodegaApi(
+        id,
+        force ? "unassign" : undefined
+      );
+
+      if (res?.status === 409 || res?.body?.hasItems) {
+        return res;
+      }
+
+      await reloadBodegas();
+      Alert.alert("Bodega", "Eliminada correctamente.");
+      return res;
+    } catch (error) {
+      console.log("[deleteBodega] ERROR:", error?.message);
+      Alert.alert(
+        "Error",
+        `No se pudo eliminar la bodega.\n${
+          error?.message || "Revisa la conexión."
+        }`
+      );
+    }
+  };
+
+  /* ---------- Acciones ITEMS ---------- */
 
   const saveItem = async (payload) => {
-    const clase = pesoAClase(payload.peso);
-    const normalized = { ...payload, clase };
+    try {
+      const creating = !payload.id;
 
-    if (payload.id) {
-      setItems((prev) =>
-        prev.map((it) => (it.id === payload.id ? normalized : it))
+      const body = {
+        id_item: payload.id,
+        nombre: payload.nombre,
+        id_categoria:
+          payload.id_categoria ??
+          payload.categoriaId ??
+          null,
+        id_bodega:
+          payload.bodegaId ??
+          payload.id_bodega ??
+          null,
+        ancho: num(payload.ancho),
+        largo: num(payload.largo),
+        alto: num(payload.alto),
+        peso: num(payload.peso),
+        cantidad: clampInt(payload.cantidad, 1),
+      };
+
+      if (creating) {
+        await insertItem(body);
+      } else {
+        await updateItem(body);
+      }
+
+      await reloadItems();
+      Alert.alert(
+        "Ítem",
+        creating
+          ? "Creado correctamente."
+          : "Actualizado correctamente."
       );
-    } else {
-      setItems((prev) => [...prev, { ...normalized, id: genId() }]);
+    } catch (error) {
+      console.log("[saveItem] ERROR:", error?.message);
+      Alert.alert(
+        "Error",
+        `No se pudo guardar el ítem.\n${
+          error?.message || "Revisa la conexión."
+        }`
+      );
     }
   };
 
-  const deleteItem = async (id) => {
-    setItems((prev) => prev.filter((it) => it.id !== id));
+  const deleteItemWrapped = async (id) => {
+    try {
+      await deleteItemApi(id);
+      await reloadItems();
+      Alert.alert("Ítem", "Eliminado correctamente.");
+    } catch (error) {
+      console.log("[deleteItem] ERROR:", error?.message);
+      Alert.alert(
+        "Error",
+        `No se pudo eliminar el ítem.\n${
+          error?.message || "Revisa la conexión."
+        }`
+      );
+    }
   };
 
-  /* ----------------- Solicitudes de desactivación ----------------- */
+  /* ---------- Solicitudes de desactivación ---------- */
 
-  const createDeactivateRequest = async ({ bodegaId, userId, motivo = "" }) => {
+  const createDeactivateRequest = async ({
+    bodegaId,
+    userId,
+    motivo = "",
+  }) => {
     const exists = requests.some(
-      (r) => r.bodegaId === bodegaId && r.status === "pending"
+      (r) =>
+        r.bodegaId === bodegaId &&
+        r.status === "pending"
     );
 
     if (exists) {
@@ -504,8 +551,7 @@ export function AppProvider({ children }) {
     );
   };
 
-
-  /* ----------------- Auth ----------------- */
+  /* ---------- Auth ---------- */
 
   const onLogin = async (user) => {
     setCurrentUser(user);
@@ -520,14 +566,17 @@ export function AppProvider({ children }) {
     await LocalStore.removeItem(K_SESSION);
   };
 
-  /* ----------------- Derivados finales ----------------- */
+  /* ---------- Derivado ---------- */
 
   const pendingCount = useMemo(
-    () => requests.filter((r) => r.status === "pending").length,
+    () =>
+      requests.filter(
+        (r) => r.status === "pending"
+      ).length,
     [requests]
   );
 
-  /* ----------------- Provider ----------------- */
+  /* ---------- Provider ---------- */
 
   return (
     <Ctx.Provider
@@ -535,20 +584,26 @@ export function AppProvider({ children }) {
         currentUser,
         bodegas,
         items,
+        categorias,
         requests,
         itemsByBodega,
         metricsOf,
         pendingCount,
+        // Bodegas
         saveBodega,
         deleteBodegaOrphanItems,
         setBodegaActive,
+        // Items
         saveItem,
-        deleteItem,
+        deleteItem: deleteItemWrapped,
+        // Requests
         createDeactivateRequest,
         approveRequest,
         rejectRequest,
+        // Auth
         onLogin,
         onLogout,
+        // Utils
         vol,
         clampInt,
         itemVolTotal,
@@ -559,5 +614,4 @@ export function AppProvider({ children }) {
       {children}
     </Ctx.Provider>
   );
-
 }

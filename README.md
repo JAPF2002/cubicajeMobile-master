@@ -1,2 +1,0 @@
-# cubicajeMobile-master
-

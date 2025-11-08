@@ -5,6 +5,7 @@ import AppTab from "./AppTab";
 import AuthScreen from "../screens/AuthScreen";
 import AdminUsers from "../screens/AdminUsers";
 import UsersListScreen from "../screens/UsersListScreen";
+import Bodega3DScreen from "../features/bodega3d/Bodega3DScreen"; // 👈 importar
 import { useApp } from "../store";
 
 const Stack = createNativeStackNavigator();
@@ -15,13 +16,27 @@ export default function AppStack() {
   return (
     <Stack.Navigator
       screenOptions={{ headerShown: false }}
-      initialRouteName="Main"               // <- SIEMPRE arranca en el Menú
+      initialRouteName="Main"
     >
+      {/* Tabs principales */}
       <Stack.Screen name="Main" component={AppTab} />
-      {/* Dejamos Auth disponible, pero no bloquea el inicio */}
+
+      {/* Auth / Admin */}
       <Stack.Screen name="Auth" component={AuthScreen} />
       <Stack.Screen name="AdminUsers" component={AdminUsers} />
       <Stack.Screen name="UsersList" component={UsersListScreen} />
+
+      {/* Vista 3D de Bodega */}
+      <Stack.Screen
+        name="Bodega3D"
+        component={Bodega3DScreen}
+        options={({ route }) => ({
+          headerShown: true,
+          title: route?.params?.nombre
+            ? `Bodega 3D · ${route.params.nombre}`
+            : "Bodega 3D",
+        })}
+      />
     </Stack.Navigator>
   );
 }

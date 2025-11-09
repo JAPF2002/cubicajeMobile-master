@@ -1,4 +1,5 @@
-// src/store.js
+// C:\Users\japf2\Desktop\Tesis Cubicaje\Proyecto\proyectoPrincipal\cubicajeMobile-master\src\store.js
+
 import React, {
   createContext,
   useContext,
@@ -20,6 +21,7 @@ import {
 } from "./features/api";
 
 /* ----------------- Storage (web/RN fallback) ----------------- */
+
 const memStore = {
   _map: new Map(),
   async getItem(k) {
@@ -36,8 +38,9 @@ const memStore = {
 export const LocalStore = {
   async getItem(key) {
     try {
-      if (typeof window !== "undefined" && window.localStorage)
+      if (typeof window !== "undefined" && window.localStorage) {
         return window.localStorage.getItem(key);
+      }
     } catch {}
     return memStore.getItem(key);
   },
@@ -62,6 +65,7 @@ export const LocalStore = {
 };
 
 /* ----------------- Keys ----------------- */
+
 export const K_BODEGAS = "@bodegas";
 export const K_ITEMS = "@items";
 export const K_USERS = "@users";
@@ -69,6 +73,7 @@ export const K_SESSION = "@session";
 export const K_BDG_REQUESTS = "@bodega_requests";
 
 /* ----------------- Helpers ----------------- */
+
 export const num = (v) => {
   const n = parseFloat(String(v ?? "").replace(",", "."));
   return Number.isFinite(n) ? n : 0;
@@ -104,6 +109,7 @@ export function pesoAClase(pesoKg) {
 }
 
 /* ----------------- Contexto ----------------- */
+
 const Ctx = createContext(null);
 export const useApp = () => useContext(Ctx);
 
@@ -115,6 +121,7 @@ export function AppProvider({ children }) {
   const [categorias, setCategorias] = useState([]);
 
   /* ---------- Carga inicial ---------- */
+
   useEffect(() => {
     (async () => {
       try {
@@ -158,6 +165,7 @@ export function AppProvider({ children }) {
   }, []);
 
   /* ---------- Persistencia local ---------- */
+
   useEffect(() => {
     LocalStore.setItem(K_BODEGAS, JSON.stringify(bodegas));
   }, [bodegas]);
@@ -170,7 +178,7 @@ export function AppProvider({ children }) {
     LocalStore.setItem(K_BDG_REQUESTS, JSON.stringify(requests));
   }, [requests]);
 
-  /* ---------- Helpers internos: API ---------- */
+  /* ---------- Helpers internos: API BODEGAS ---------- */
 
   const reloadBodegas = async () => {
     const res = await getBodegas();
@@ -214,6 +222,8 @@ export function AppProvider({ children }) {
     }
   };
 
+  /* ---------- Helpers internos: API ITEMS ---------- */
+
   const reloadItems = async () => {
     const res = await getItems();
 
@@ -227,6 +237,8 @@ export function AppProvider({ children }) {
       throw new Error("Formato inesperado en /api/items");
     }
 
+    // Los ítems deberían venir normalizados desde el backend,
+    // pero mantenemos un mapeo defensivo.
     const normalizadas = lista.map((it) => ({
       id: it.id_item ?? it.id,
       nombre: it.nombre,
@@ -234,16 +246,11 @@ export function AppProvider({ children }) {
       alto: num(it.alto),
       largo: num(it.largo),
       peso: num(it.peso),
-      // soporta 'cantidad' o 'qty', y si no hay, 1
-      cantidad: clampInt(
-        it.cantidad ?? it.qty ?? 1,
-        1
-      ),
+      cantidad: clampInt(it.cantidad ?? it.qty ?? 1, 1),
       bodegaId:
-        it.id_bodega ?? it.bodega_id ?? it.bodegaId ?? null,
+        it.bodegaId ?? it.id_bodega ?? it.bodega_id ?? null,
       id_categoria:
         it.id_categoria ?? it.categoriaId ?? null,
-      // 'clase' es solo lógica front, si algún día la devuelves la usamos
       clase: it.clase || pesoAClase(it.peso),
     }));
 
@@ -418,22 +425,20 @@ export function AppProvider({ children }) {
     try {
       const creating = !payload.id;
 
+      // Aquí solo preparamos el body; la lógica de normalización/guardado vive en el backend.
       const body = {
+        id: payload.id,
         id_item: payload.id,
         nombre: payload.nombre,
         id_categoria:
-          payload.id_categoria ??
-          payload.categoriaId ??
-          null,
+          payload.id_categoria ?? payload.categoriaId ?? null,
         id_bodega:
-          payload.bodegaId ??
-          payload.id_bodega ??
-          null,
-        ancho: num(payload.ancho),
-        largo: num(payload.largo),
-        alto: num(payload.alto),
-        peso: num(payload.peso),
-        cantidad: clampInt(payload.cantidad, 1),
+          payload.bodegaId ?? payload.id_bodega ?? null,
+        ancho: payload.ancho,
+        largo: payload.largo,
+        alto: payload.alto,
+        peso: payload.peso,
+        cantidad: payload.cantidad,
       };
 
       if (creating) {

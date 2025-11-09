@@ -21,8 +21,8 @@ import {
 } from "../store";
 
 /**
- * Mapa de productos por categoría (texto fijo para selección rápida).
- * Las keys deben coincidir con "nombre" en tabla `categorias`.
+ * Mapa de productos por categoría.
+ * Las keys DEBEN coincidir con "nombre" en tabla `categorias`.
  */
 const PRODUCTOS_POR_CATEGORIA = {
   "Cintas Transportadoras": [
@@ -111,10 +111,6 @@ export default function ItemsScreen() {
     metricsOf,
   } = useApp();
 
-  // Siempre array
-  const itemsList = Array.isArray(items) ? items : [];
-  console.log("[ItemsScreen] items cargados:", itemsList.length);
-
   const [tab, setTab] = useState("form");
 
   const [form, setForm] = useState({
@@ -134,10 +130,7 @@ export default function ItemsScreen() {
   const volUnit = vol(form.ancho, form.alto, form.largo);
   const volNecesario = volUnit * cantidadInt;
 
-  const bodegasDisponibles = useMemo(
-    () => bodegas || [],
-    [bodegas]
-  );
+  const bodegasDisponibles = useMemo(() => bodegas, [bodegas]);
 
   /* ---------- Selectores ---------- */
 
@@ -212,7 +205,7 @@ export default function ItemsScreen() {
   };
 
   const seleccionarBodega = () => {
-    if (!bodegasDisponibles.length) {
+    if (bodegasDisponibles.length === 0) {
       return Alert.alert(
         "Bodegas",
         "No hay bodegas registradas."
@@ -268,10 +261,7 @@ export default function ItemsScreen() {
     }
 
     const m = metricsOf(b);
-    if (
-      isFinite(volNecesario) &&
-      volNecesario > m.libre + 1e-9
-    ) {
+    if (isFinite(volNecesario) && volNecesario > m.libre + 1e-9) {
       return Alert.alert(
         "Sin espacio",
         `Vol ítem: ${volNecesario.toFixed(
@@ -306,10 +296,9 @@ export default function ItemsScreen() {
         cantidad: "1",
         bodegaId: null,
       });
-
       setTab("view");
-    } catch (err) {
-      console.log("[guardar item] ERROR:", err);
+    } catch {
+      // saveItem ya muestra el error
     }
   };
 
@@ -321,14 +310,12 @@ export default function ItemsScreen() {
   const [sortBy, setSortBy] = useState("name");
 
   const filtered = useMemo(() => {
-    let list = [...itemsList];
+    let list = items.slice();
 
     if (showOrphans) {
       list = list.filter((it) => !it.bodegaId);
     } else if (filterBodegaId) {
-      list = list.filter(
-        (it) => it.bodegaId === filterBodegaId
-      );
+      list = list.filter((it) => it.bodegaId === filterBodegaId);
     }
 
     if (filterClass) {
@@ -342,39 +329,28 @@ export default function ItemsScreen() {
         (a.nombre || "").localeCompare(b.nombre || "")
       );
     } else {
-      list.sort(
-        (a, b) => itemVolTotal(b) - itemVolTotal(a)
-      );
+      list.sort((a, b) => itemVolTotal(b) - itemVolTotal(a));
     }
 
     return list;
-  }, [
-    itemsList,
-    showOrphans,
-    filterBodegaId,
-    filterClass,
-    sortBy,
-  ]);
+  }, [items, showOrphans, filterBodegaId, filterClass, sortBy]);
 
   const resumen = useMemo(() => {
-    const unidades = filtered.reduce(
+    const u = filtered.reduce(
       (acc, it) => acc + clampInt(it.cantidad, 1),
       0
     );
-    const volTotal = filtered.reduce(
+    const v = filtered.reduce(
       (acc, it) => acc + itemVolTotal(it),
       0
     );
-    return { unidades, vol: volTotal };
+    return { unidades: u, vol: v };
   }, [filtered]);
 
   const moveItem = (it) => {
     const vTotal = itemVolTotal(it);
     const opciones = bodegas
-      .map((b) => ({
-        b,
-        libre: metricsOf(b).libre,
-      }))
+      .map((b) => ({ b, libre: metricsOf(b).libre }))
       .filter(
         (o) =>
           o.b.id !== it.bodegaId &&
@@ -390,9 +366,7 @@ export default function ItemsScreen() {
     }
 
     const opts = opciones.map((o) => ({
-      text: `${o.b.nombre} · Libre: ${o.libre.toFixed(
-        2
-      )} m³`,
+      text: `${o.b.nombre} · Libre: ${o.libre.toFixed(2)} m³`,
       onPress: async () => {
         await saveItem({
           ...it,
@@ -416,36 +390,21 @@ export default function ItemsScreen() {
     return (
       <View style={st.card}>
         <Text style={st.cardTitle}>
-          {it.nombre}
+          {it.nombre}{" "}
           <Text style={st.badge}>
-            {" "}
-            · {cant} uds
-          </Text>
-          <Text style={st.badge}>
-            {" "}
-            · Clase: {it.clase || "N/D"}
+            · {cant} uds · Clase: {it.clase || "N/D"}
           </Text>
           {esSuelto && (
-            <Text
-              style={[
-                st.badge,
-                { color: "#b45309" },
-              ]}
-            >
+            <Text style={[st.badge, { color: "#b45309" }]}>
               {" "}
               🟠 Sin bodega
             </Text>
           )}
         </Text>
-
         <Text style={st.cardLine}>
           📐 {it.ancho}×{it.alto}×{it.largo} m · Vol/unidad:{" "}
-          {isFinite(vUnit)
-            ? vUnit.toFixed(3)
-            : "0.000"}{" "}
-          m³
+          {isFinite(vUnit) ? vUnit.toFixed(3) : "0.000"} m³
         </Text>
-
         <Text style={st.cardLine}>
           🔢 Cantidad: {cant} · Vol total:{" "}
           {isFinite(vUnit * cant)
@@ -453,25 +412,17 @@ export default function ItemsScreen() {
             : "0.000"}{" "}
           m³
         </Text>
-
         <Text style={st.cardLine}>
           🏬 Bodega: {b ? b.nombre : "(sin asignar)"}
         </Text>
 
-        <View
-          style={[
-            st.row,
-            { gap: 8, marginTop: 8 },
-          ]}
-        >
+        <View style={[st.row, { gap: 8, marginTop: 8 }]}>
           {!esSuelto && (
             <TouchableOpacity
               style={[st.btn, st.btnInfo]}
               onPress={() => moveItem(it)}
             >
-              <Text style={st.btnTxt}>
-                ↪️ Mover
-              </Text>
+              <Text style={st.btnTxt}>↪️ Mover</Text>
             </TouchableOpacity>
           )}
 
@@ -482,23 +433,17 @@ export default function ItemsScreen() {
                 "Eliminar",
                 `¿Eliminar «${it.nombre}»?`,
                 [
-                  {
-                    text: "No",
-                    style: "cancel",
-                  },
+                  { text: "No", style: "cancel" },
                   {
                     text: "Sí",
                     style: "destructive",
-                    onPress: () =>
-                      deleteItem(it.id),
+                    onPress: () => deleteItem(it.id),
                   },
                 ]
               )
             }
           >
-            <Text style={st.btnTxt}>
-              🗑️ Eliminar
-            </Text>
+            <Text style={st.btnTxt}>🗑️ Eliminar</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -513,19 +458,13 @@ export default function ItemsScreen() {
 
       <View style={st.tabs}>
         <TouchableOpacity
-          style={[
-            st.tabBtn,
-            tab === "form" && st.activeTab,
-          ]}
+          style={[st.tabBtn, tab === "form" && st.activeTab]}
           onPress={() => setTab("form")}
         >
           <Text>Formulario</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[
-            st.tabBtn,
-            tab === "view" && st.activeTab,
-          ]}
+          style={[st.tabBtn, tab === "view" && st.activeTab]}
           onPress={() => setTab("view")}
         >
           <Text>Visualizar Ítems</Text>
@@ -534,7 +473,7 @@ export default function ItemsScreen() {
 
       {tab === "form" ? (
         <ScrollView>
-          {/* Formulario */}
+          {/* Categoría */}
           <Text style={st.label}>Categoría</Text>
           <TouchableOpacity
             style={st.selectorBtn}
@@ -546,6 +485,7 @@ export default function ItemsScreen() {
             </Text>
           </TouchableOpacity>
 
+          {/* Producto */}
           <Text style={st.label}>Producto</Text>
           <TouchableOpacity
             style={st.selectorBtn}
@@ -561,6 +501,7 @@ export default function ItemsScreen() {
             </Text>
           </TouchableOpacity>
 
+          {/* Dimensiones */}
           <Text style={st.label}>Dimensiones (m)</Text>
           <TextInput
             style={st.input}
@@ -590,6 +531,7 @@ export default function ItemsScreen() {
             }
           />
 
+          {/* Peso */}
           <Text style={st.label}>Peso (kg)</Text>
           <TextInput
             style={st.input}
@@ -601,6 +543,7 @@ export default function ItemsScreen() {
             }
           />
 
+          {/* Cantidad */}
           <Text style={st.label}>Cantidad</Text>
           <TextInput
             style={st.input}
@@ -610,12 +553,13 @@ export default function ItemsScreen() {
             onChangeText={(v) =>
               setForm((f) => ({
                 ...f,
-                cantidad:
-                  v.replace(/[^0-9]/g, "") || "1",
+                // ✅ Permitimos vacío; el mínimo 1 se aplica al guardar (clampInt en backend/front)
+                cantidad: v.replace(/[^0-9]/g, ""),
               }))
             }
           />
 
+          {/* Bodega */}
           <Text style={st.label}>Bodega</Text>
           <TouchableOpacity
             style={st.selectorBtn}
@@ -624,14 +568,13 @@ export default function ItemsScreen() {
             <Text style={st.selectorText}>
               {form.bodegaId
                 ? bodegas.find(
-                    (b) =>
-                      b.id ===
-                      form.bodegaId
+                    (b) => b.id === form.bodegaId
                   )?.nombre || "(?)"
                 : "Toca para elegir bodega"}
             </Text>
           </TouchableOpacity>
 
+          {/* Panel cálculo */}
           <View style={st.calcPanel}>
             <Text style={st.calcTitle}>📏 Cálculo</Text>
             <Text style={st.calcLine}>
@@ -654,7 +597,9 @@ export default function ItemsScreen() {
             <Text style={st.calcLine}>
               Clase por peso:{" "}
               <Text
-                style={{ fontWeight: "700" }}
+                style={{
+                  fontWeight: "700",
+                }}
               >
                 {pesoAClase(form.peso)}
               </Text>
@@ -662,32 +607,26 @@ export default function ItemsScreen() {
           </View>
 
           <TouchableOpacity
-            style={[
-              st.btn,
-              st.btnPrimary,
-              { marginTop: 8 },
-            ]}
+            style={[st.btn, st.btnPrimary, { marginTop: 8 }]}
             onPress={guardar}
           >
-            <Text style={st.btnTxt}>
-              GUARDAR
-            </Text>
+            <Text style={st.btnTxt}>GUARDAR</Text>
           </TouchableOpacity>
         </ScrollView>
       ) : (
         <>
-          {/* Filtros lista */}
+          {/* Filtros */}
           <View
             style={[
               st.row,
-              { gap: 8, flexWrap: "wrap" },
+              {
+                gap: 8,
+                flexWrap: "wrap",
+              },
             ]}
           >
             <TouchableOpacity
-              style={[
-                st.selectorBtn,
-                { flex: 1 },
-              ]}
+              style={[st.selectorBtn, { flex: 1 }]}
               onPress={() => {
                 const opts = [
                   {
@@ -761,7 +700,8 @@ export default function ItemsScreen() {
               (k) => {
                 const active =
                   (k === null &&
-                    filterClass === null) ||
+                    filterClass ===
+                      null) ||
                   filterClass === k;
                 const label =
                   k || "Todas las clases";
@@ -778,7 +718,8 @@ export default function ItemsScreen() {
                   >
                     <Text
                       style={{
-                        fontWeight: "700",
+                        fontWeight:
+                          "700",
                       }}
                     >
                       {label}
@@ -791,10 +732,7 @@ export default function ItemsScreen() {
 
           <View style={[st.row, { gap: 8 }]}>
             <TouchableOpacity
-              style={[
-                st.selectorBtn,
-                { flex: 1 },
-              ]}
+              style={[st.selectorBtn, { flex: 1 }]}
               onPress={() =>
                 setSortBy(
                   sortBy === "name"
@@ -814,24 +752,32 @@ export default function ItemsScreen() {
 
           <View style={st.summaryBox}>
             <Text style={st.summaryText}>
-              Unidades: {resumen.unidades} ·
+              Unidades:{" "}
+              {resumen.unidades} ·
               Volumen total:{" "}
-              {resumen.vol.toFixed(3)} m³
+              {resumen.vol.toFixed(3)}{" "}
+              m³
             </Text>
           </View>
 
           <FlatList
             data={filtered}
-            keyExtractor={(it) => String(it.id)}
+            keyExtractor={(it) =>
+              String(it.id)
+            }
             renderItem={renderCard}
             ListEmptyComponent={
               <Text
                 style={{
-                  textAlign: "center",
-                  color: "#64748b",
+                  textAlign:
+                    "center",
+                  color:
+                    "#64748b",
                 }}
               >
-                No hay ítems para los filtros.
+                No hay ítems
+                para los
+                filtros.
               </Text>
             }
           />
@@ -842,7 +788,6 @@ export default function ItemsScreen() {
 }
 
 /* ---------- Estilos ---------- */
-
 const st = StyleSheet.create({
   title: {
     fontSize: 22,

@@ -1,14 +1,45 @@
-// src/features/bodega3d/Bodega3DScreen.js
+// C:\Users\japf2\Desktop\Tesis Cubicaje\Proyecto\proyectoPrincipal\cubicajeMobile-master\src\features\bodega3d\Bodega3DScreen.js
+
 import React from "react";
 import { View, StyleSheet } from "react-native";
 import { WebView } from "react-native-webview";
+import { useApp } from "../../store";
 
 export default function Bodega3DScreen({ route }) {
-  const { nombre, ancho, alto, largo } = route.params || {};
+  const { bodegas, items } = useApp();
 
-  const w = Number(ancho) || 10;
-  const h = Number(alto) || 5;
-  const l = Number(largo) || 10;
+  // Se espera que venga bodegaId en los params
+  const { bodegaId, nombre, ancho, alto, largo } = route.params || {};
+
+  // Buscar la bodega en el store si tenemos id
+  const bodega =
+    bodegas.find((b) => b.id === bodegaId) || null;
+
+  const bw = Number(bodega?.ancho ?? ancho) || 10;
+  const bh = Number(bodega?.alto ?? alto) || 5;
+  const bl = Number(bodega?.largo ?? largo) || 10;
+  const bName = bodega?.nombre || nombre || "Bodega";
+
+  // Ítems dentro de esta bodega
+  const itemsInBodega = items
+    .filter((it) => it.bodegaId === (bodega?.id ?? bodegaId))
+    .map((it) => ({
+      nombre: it.nombre,
+      w: Number(it.ancho) || 1,
+      h: Number(it.alto) || 1,
+      l: Number(it.largo) || 1,
+      cantidad:
+        parseInt(it.cantidad ?? 1, 10) > 0
+          ? parseInt(it.cantidad, 10)
+          : 1,
+      clase: it.clase || "",
+    }));
+
+  // Serializamos a JSON seguro para incrustar en el HTML
+  const itemsJson = JSON.stringify(itemsInBodega).replace(
+    /</g,
+    "\\u003c"
+  );
 
   const html = `
     <!DOCTYPE html>
@@ -47,8 +78,9 @@ export default function Bodega3DScreen({ route }) {
       </head>
       <body>
         <div id="label">
-          ${nombre ? `Bodega: ${nombre}<br/>` : ""}
-          ${w}m (ancho) × ${h}m (alto) × ${l}m (largo)
+          Bodega: ${bName}<br/>
+          ${bw}m (ancho) × ${bh}m (alto) × ${bl}m (largo)<br/>
+          Ítems cargados: ${itemsInBodega.length}
         </div>
         <canvas id="c"></canvas>
 
@@ -56,6 +88,8 @@ export default function Bodega3DScreen({ route }) {
           (function () {
             var canvas = document.getElementById('c');
             var ctx = canvas.getContext('2d');
+
+            var items = ${itemsJson};
 
             function resize() {
               var dpr = window.devicePixelRatio || 1;
@@ -67,17 +101,17 @@ export default function Bodega3DScreen({ route }) {
             window.addEventListener('resize', resize);
             resize();
 
-            // Escala para que la caja siempre quepa
-            var maxDim = Math.max(${w}, ${h}, ${l}) || 1;
-            var target = Math.min(window.innerWidth, window.innerHeight) * 0.35;
+            // Escala para que TODO quepa (bodega + cajas)
+            var maxDim = Math.max(${bw}, ${bh}, ${bl}) || 1;
+            var target = Math.min(window.innerWidth, window.innerHeight) * 0.42;
             var scale = target / maxDim;
 
-            var halfX = (${w} * scale) / 2;
-            var halfY = (${h} * scale) / 2;
-            var halfZ = (${l} * scale) / 2;
+            var halfX = (${bw} * scale) / 2;
+            var halfY = (${bh} * scale) / 2;
+            var halfZ = (${bl} * scale) / 2;
 
-            // Vértices del prisma
-            var vertices = [
+            /* ------- Vértices bodega ------- */
+            var bodegaVerts = [
               // base inferior
               {x:-halfX,y:-halfY,z:-halfZ},
               {x: halfX,y:-halfY,z:-halfZ},
@@ -90,24 +124,87 @@ export default function Bodega3DScreen({ route }) {
               {x:-halfX,y: halfY,z: halfZ},
             ];
 
-            // Aristas
-            var edges = [
-              [0,1],[1,2],[2,3],[3,0], // abajo
-              [4,5],[5,6],[6,7],[7,4], // arriba
-              [0,4],[1,5],[2,6],[3,7]  // verticales
+            var bodegaEdges = [
+              [0,1],[1,2],[2,3],[3,0],
+              [4,5],[5,6],[6,7],[7,4],
+              [0,4],[1,5],[2,6],[3,7]
             ];
+
+            /* ------- Layout de ítems dentro de la bodega ------- */
+            // Muy sencillo: se colocan sobre el piso en filas/columnas,
+            // respetando sus dimensiones escaladas. Si no caben, se empieza
+            // a "apilar" en altura.
+
+            function buildItemBoxes() {
+              var boxes = [];
+              if (!items || !items.length) return boxes;
+
+              var originX = -halfX;
+              var originZ = -halfZ;
+
+              var cursorX = originX;
+              var cursorZ = originZ;
+              var layerY = -halfY; // piso
+              var rowDepth = 0;
+
+              items.forEach(function(it, idx) {
+                var w = (it.w || 1) * scale;
+                var h = (it.h || 1) * scale;
+                var l = (it.l || 1) * scale;
+                var count = it.cantidad || 1;
+
+                for (var n = 0; n < count; n++) {
+                  // salto de fila si no cabe en X
+                  if (cursorX + w > halfX) {
+                    cursorX = originX;
+                    cursorZ += rowDepth;
+                    rowDepth = 0;
+                  }
+                  // nueva capa si no cabe en Z
+                  if (cursorZ + l > halfZ) {
+                    cursorX = originX;
+                    cursorZ = originZ;
+                    layerY += h; // subir capa
+                  }
+
+                  // centro de la caja
+                  var cx = cursorX + w / 2;
+                  var cy = layerY + h / 2;
+                  var cz = cursorZ + l / 2;
+
+                  // guardamos caja
+                  boxes.push({
+                    nombre: it.nombre,
+                    x: cx,
+                    y: cy,
+                    z: cz,
+                    w: w,
+                    h: h,
+                    l: l,
+                    colorIndex: idx
+                  });
+
+                  cursorX += w;
+                  if (l > rowDepth) rowDepth = l;
+                }
+              });
+
+              return boxes;
+            }
+
+            var itemBoxes = buildItemBoxes();
+
+            /* ------- Cámara / interacción ------- */
 
             var angleX = 0.6;
             var angleY = -0.7;
 
-            // -------- Zoom --------
-            var zoom = 1.4;                   // nivel inicial
+            var zoom = 1.4;
             var baseDist = maxDim * scale * 3;
             function clampZoom(z) {
               return Math.max(0.4, Math.min(5, z));
             }
 
-            // -------- Rotación / pinch --------
             var lastX = 0;
             var lastY = 0;
             var isRotating = false;
@@ -140,7 +237,6 @@ export default function Bodega3DScreen({ route }) {
               isRotating = false;
             }
 
-            // Mouse
             canvas.addEventListener('mousedown', function(e){
               onDown(e.clientX, e.clientY);
             });
@@ -149,14 +245,12 @@ export default function Bodega3DScreen({ route }) {
             });
             window.addEventListener('mouseup', onUp);
 
-            // Wheel zoom (desktop)
             canvas.addEventListener('wheel', function(e){
               e.preventDefault();
               var factor = e.deltaY < 0 ? 1.1 : 0.9;
               zoom = clampZoom(zoom * factor);
             }, { passive: false });
 
-            // Touch: 1 dedo rota, 2 dedos zoom
             canvas.addEventListener('touchstart', function(e){
               if (e.touches.length === 1) {
                 var t = e.touches[0];
@@ -194,15 +288,13 @@ export default function Bodega3DScreen({ route }) {
 
             function project(v) {
               var cx = 0, cy = 0;
-              var cz = baseDist / zoom; // más zoom => cámara más cerca
+              var cz = baseDist / zoom;
 
-              // rotación Y
               var cosY = Math.cos(angleY);
               var sinY = Math.sin(angleY);
               var x1 = v.x * cosY - v.z * sinY;
               var z1 = v.x * sinY + v.z * cosY;
 
-              // rotación X
               var cosX = Math.cos(angleX);
               var sinX = Math.sin(angleX);
               var y2 = v.y * cosX - z1 * sinX;
@@ -228,7 +320,7 @@ export default function Bodega3DScreen({ route }) {
               var step = 24;
 
               ctx.save();
-              ctx.strokeStyle = "#1f2937";
+              ctx.strokeStyle = "#111827";
               ctx.lineWidth = 1;
               for (var x = 0; x <= w; x += step) {
                 ctx.beginPath();
@@ -253,26 +345,80 @@ export default function Bodega3DScreen({ route }) {
 
               ctx.lineWidth = 2;
 
-              // X rojo
-              ctx.strokeStyle = "#ef4444";
+              ctx.strokeStyle = "#ef4444"; // X
               ctx.beginPath();
               ctx.moveTo(origin.x, origin.y);
               ctx.lineTo(xAxis.x, xAxis.y);
               ctx.stroke();
 
-              // Y verde
-              ctx.strokeStyle = "#22c55e";
+              ctx.strokeStyle = "#22c55e"; // Y
               ctx.beginPath();
               ctx.moveTo(origin.x, origin.y);
               ctx.lineTo(yAxis.x, yAxis.y);
               ctx.stroke();
 
-              // Z azul
-              ctx.strokeStyle = "#3b82f6";
+              ctx.strokeStyle = "#3b82f6"; // Z
               ctx.beginPath();
               ctx.moveTo(origin.x, origin.y);
               ctx.lineTo(zAxis.x, zAxis.y);
               ctx.stroke();
+            }
+
+            function drawBodega() {
+              var pts = bodegaVerts.map(project);
+              ctx.strokeStyle = "#ffffff";
+              ctx.lineWidth = 2;
+              bodegaEdges.forEach(function(e) {
+                var a = pts[e[0]];
+                var b = pts[e[1]];
+                ctx.beginPath();
+                ctx.moveTo(a.x, a.y);
+                ctx.lineTo(b.x, b.y);
+                ctx.stroke();
+              });
+            }
+
+            function drawItems() {
+              if (!itemBoxes.length) return;
+
+              itemBoxes.forEach(function(box) {
+                var hw = box.w / 2;
+                var hh = box.h / 2;
+                var hl = box.l / 2;
+
+                var v = [
+                  {x: box.x - hw, y: box.y - hh, z: box.z - hl},
+                  {x: box.x + hw, y: box.y - hh, z: box.z - hl},
+                  {x: box.x + hw, y: box.y - hh, z: box.z + hl},
+                  {x: box.x - hw, y: box.y - hh, z: box.z + hl},
+                  {x: box.x - hw, y: box.y + hh, z: box.z - hl},
+                  {x: box.x + hw, y: box.y + hh, z: box.z - hl},
+                  {x: box.x + hw, y: box.y + hh, z: box.z + hl},
+                  {x: box.x - hw, y: box.y + hh, z: box.z + hl},
+                ];
+
+                var edges = [
+                  [0,1],[1,2],[2,3],[3,0],
+                  [4,5],[5,6],[6,7],[7,4],
+                  [0,4],[1,5],[2,6],[3,7]
+                ];
+
+                var pts = v.map(project);
+
+                // Color por itemIndex (simple)
+                var hue = (box.colorIndex * 57) % 360;
+                ctx.strokeStyle = "hsl(" + hue + ", 80%, 60%)";
+                ctx.lineWidth = 1.5;
+
+                edges.forEach(function(e) {
+                  var a = pts[e[0]];
+                  var b = pts[e[1]];
+                  ctx.beginPath();
+                  ctx.moveTo(a.x, a.y);
+                  ctx.lineTo(b.x, b.y);
+                  ctx.stroke();
+                });
+              });
             }
 
             function render() {
@@ -286,19 +432,8 @@ export default function Bodega3DScreen({ route }) {
 
               drawGrid();
               drawAxes();
-
-              var pts = vertices.map(project);
-
-              ctx.strokeStyle = "#ffffff";
-              ctx.lineWidth = 2;
-              edges.forEach(function(e) {
-                var a = pts[e[0]];
-                var b = pts[e[1]];
-                ctx.beginPath();
-                ctx.moveTo(a.x, a.y);
-                ctx.lineTo(b.x, b.y);
-                ctx.stroke();
-              });
+              drawBodega();
+              drawItems();
 
               requestAnimationFrame(render);
             }

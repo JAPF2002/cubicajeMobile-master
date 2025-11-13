@@ -1,4 +1,4 @@
-// src/screens/Bodega/BodegaFormScreen.js
+// cubicajeMobile-master/src/screens/Bodega/BodegaFormScreen.js
 import React, { useEffect, useState } from "react";
 import {
   View,
@@ -8,8 +8,9 @@ import {
   Alert,
   ScrollView,
   StyleSheet,
+  ActivityIndicator,
 } from "react-native";
-import { useApp, vol } from "../../store"; // <- ruta relativa al store
+import { useApp, vol } from "../../store"; // <- store global
 
 // Vista demo (solo visual – placeholder para 3D)
 function Tablero({ alto, ancho, largo }) {
@@ -28,7 +29,9 @@ function Tablero({ alto, ancho, largo }) {
 
 export default function BodegaFormScreen(props) {
   const { goToMenu, goToBodegasList, bodega, navigation } = props;
-  const { saveBodega } = useApp();
+
+  // 👈 traemos saveBodega y syncBodegasFromApi del store
+  const { saveBodega, syncBodegasFromApi } = useApp();
 
   const [form, setForm] = useState({
     id: null,
@@ -40,6 +43,8 @@ export default function BodegaFormScreen(props) {
     largo: "",
     active: true,
   });
+
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (bodega) {
@@ -97,6 +102,9 @@ export default function BodegaFormScreen(props) {
     }
 
     try {
+      setSaving(true);
+
+      // 1) Guardar en la BD (API msApiCubicaje)
       await saveBodega({
         id: form.id,
         nombre: form.nombre.trim(),
@@ -108,17 +116,26 @@ export default function BodegaFormScreen(props) {
         active: !!form.active,
       });
 
+      // 2) Volver a sincronizar desde la BD para asegurarnos
+      try {
+        await syncBodegasFromApi();
+      } catch (e) {
+        console.log("[BodegaForm] error al refrescar bodegas:", e);
+      }
+
       Alert.alert(
         "Bodega guardada",
         "La bodega se guardó correctamente.",
         [{ text: "OK", onPress: navegarALista }]
       );
     } catch (err) {
-      console.log("[BodegaFormScreen] Error guardando bodega:", err);
+      console.log("[BodegaForm] error guardar:", err);
       Alert.alert(
         "Error",
-        err?.message || "No se pudo guardar la bodega. Intenta nuevamente."
+        err?.message || "No se pudo guardar la bodega en el servidor."
       );
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -132,7 +149,9 @@ export default function BodegaFormScreen(props) {
           <Text style={st.title}>
             {form.id ? "Editar bodega" : "Nueva bodega"}
           </Text>
-          <Text style={st.subtitle}>Define ubicación, dimensiones y estado.</Text>
+          <Text style={st.subtitle}>
+            Define ubicación, dimensiones y estado.
+          </Text>
         </View>
       </View>
 
@@ -215,7 +234,8 @@ export default function BodegaFormScreen(props) {
         {/* Capacidad calculada */}
         <View style={st.calcBox}>
           <Text style={st.calcTxt}>
-            Capacidad: {Number.isFinite(capacidad) ? capacidad.toFixed(3) : "0.000"} m³
+            Capacidad:{" "}
+            {Number.isFinite(capacidad) ? capacidad.toFixed(3) : "0.000"} m³
           </Text>
         </View>
 
@@ -259,10 +279,18 @@ export default function BodegaFormScreen(props) {
           <Text style={st.bottomBtnText}>Bodegas</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={[st.bottomBtn, st.bottomBtnActive]} onPress={guardar}>
-          <Text style={[st.bottomBtnText, st.bottomBtnTextActive]}>
-            {form.id ? "Guardar cambios" : "Crear bodega"}
-          </Text>
+        <TouchableOpacity
+          style={[st.bottomBtn, st.bottomBtnActive]}
+          onPress={guardar}
+          disabled={saving}
+        >
+          {saving ? (
+            <ActivityIndicator color="#fff" size="small" />
+          ) : (
+            <Text style={[st.bottomBtnText, st.bottomBtnTextActive]}>
+              {form.id ? "Guardar cambios" : "Crear bodega"}
+            </Text>
+          )}
         </TouchableOpacity>
       </View>
     </View>

@@ -311,14 +311,30 @@ export function AppProvider({ children }) {
     }
   };
 
-  const setBodegaActive = (id, active) => {
-    setState((prev) => ({
-      ...prev,
-      bodegas: prev.bodegas.map((b) =>
-        b.id === id ? { ...b, active } : b
-      ),
-    }));
+  // Cambiar estado activo/inactivo EN BD + estado global
+  const setBodegaActive = async (id, active) => {
+    try {
+      // 1) actualizar en la BD
+      await updateBodegaApi({
+        id_bodega: id,
+        id: id,
+        activo: active ? 1 : 0,
+      });
+
+      // 2) actualizar en el estado global
+      setState((prev) => ({
+        ...prev,
+        bodegas: prev.bodegas.map((b) =>
+          b.id === id ? { ...b, active } : b
+        ),
+      }));
+    } catch (err) {
+      console.log("[setBodegaActive] error:", err);
+      // dejamos que el que llama pueda mostrar un Alert
+      throw err;
+    }
   };
+
 
   // ========= ITEMS =========
 

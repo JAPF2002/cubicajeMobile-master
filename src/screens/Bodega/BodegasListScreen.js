@@ -77,7 +77,19 @@ export default function BodegasListScreen(props) {
       return navigation.navigate("BodegaForm", { bodega: b });
   };
 
-  const adminToggle = (b) => {
+    const adminToggle = (b) => {
+    const doToggle = async (nuevoEstado) => {
+      try {
+        await setBodegaActive(b.id, nuevoEstado);
+      } catch (err) {
+        console.log("[BodegasListScreen] error toggle:", err);
+        Alert.alert(
+          "Error",
+          err?.message || "No se pudo actualizar el estado de la bodega."
+        );
+      }
+    };
+
     if (b.active) {
       Alert.alert(
         "Desactivar bodega",
@@ -87,14 +99,16 @@ export default function BodegasListScreen(props) {
           {
             text: "Desactivar",
             style: "destructive",
-            onPress: () => setBodegaActive(b.id, false),
+            onPress: () => doToggle(false),
           },
         ]
       );
     } else {
-      setBodegaActive(b.id, true);
+      // activar sin confirmación extra
+      doToggle(true);
     }
   };
+
 
   const ver3D = (b) => {
     if (!b.ancho || !b.alto || !b.largo) {

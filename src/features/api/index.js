@@ -1,6 +1,10 @@
-// src/features/api/index.js
+// cubicajeMobile-master/src/features/api/index.js
 import Config from 'react-native-config';
 import reqHelper from '../helpers/reqHelper';
+
+// 👀 LOG INICIAL: ver qué lee react-native-config
+console.log('[API] API_URL =', Config.API_URL);
+console.log('[API] PLANNING_URL =', Config.PLANNING_URL);
 
 /* ------------ PLANNINGS (msCubicajePlanning) ------------ */
 
@@ -52,30 +56,33 @@ const getTypes = async () =>
 
 /* ------------ BODEGAS (msApiCubicaje) ------------ */
 
-const getBodegas = async () =>
-  await reqHelper(`${Config.API_URL}/api/bodegas`, 'get');
+const getBodegas = async () => {
+  const url = `${Config.API_URL}/api/bodegas`;
+  console.log('[API] getBodegas URL =>', url);
+  return await reqHelper(url, 'get');
+};
 
-const insertBodega = async (data) =>
-  await reqHelper(`${Config.API_URL}/api/bodegas`, 'post', data);
+const insertBodega = async (data) => {
+  const url = `${Config.API_URL}/api/bodegas`;
+  console.log('[API] insertBodega URL =>', url, 'payload:', data);
+  return await reqHelper(url, 'post', data);
+};
 
 const updateBodegaApi = async (data) => {
   const id = data.id_bodega || data.id;
   if (!id) {
     throw new Error('ID requerido para actualizar bodega');
   }
-  return await reqHelper(
-    `${Config.API_URL}/api/bodegas/${id}`,
-    'put',
-    data
-  );
+  const url = `${Config.API_URL}/api/bodegas/${id}`;
+  console.log('[API] updateBodegaApi URL =>', url, 'payload:', data);
+  return await reqHelper(url, 'put', data);
 };
 
 const deleteBodegaApi = async (id_bodega, mode) => {
   const q = mode ? `?mode=${encodeURIComponent(mode)}` : '';
-  return await reqHelper(
-    `${Config.API_URL}/api/bodegas/${id_bodega}${q}`,
-    'delete'
-  );
+  const url = `${Config.API_URL}/api/bodegas/${id_bodega}${q}`;
+  console.log('[API] deleteBodegaApi URL =>', url);
+  return await reqHelper(url, 'delete');
 };
 
 /* ------------ CATEGORÍAS (msApiCubicaje) ------------ */

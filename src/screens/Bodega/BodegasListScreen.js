@@ -1,5 +1,5 @@
 // src/screens/Bodega/BodegasListScreen.js
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -8,18 +8,56 @@ import {
   Alert,
   FlatList,
   StyleSheet,
+  ActivityIndicator,
 } from "react-native";
 import { useApp } from "../../store";
 
 export default function BodegasListScreen(props) {
   const { goToMenu, goToBodegaFormNew, goToBodegaFormEdit, navigation } = props;
-  const { bodegas, setBodegaActive, metricsOf, currentUser } = useApp();
+
+  // 👈 ahora también traemos syncBodegasFromApi
+  const {
+    bodegas,
+    setBodegaActive,
+    metricsOf,
+    currentUser,
+    syncBodegasFromApi,
+  } = useApp();
+
+    console.log(
+    "[BodegasListScreen] bodegas en store:",
+    bodegas.length,
+    bodegas
+  );
+
 
   const isAdmin = currentUser?.role === "admin";
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all"); // all | active | inactive
   const [cityFilter, setCityFilter] = useState("all"); // all | Iquique | Alto Hospicio
+  const [loading, setLoading] = useState(false);
+
+  // --- cargar bodegas desde la API al entrar a la pantalla ---
+  useEffect(() => {
+    const cargar = async () => {
+      try {
+        setLoading(true);
+        await syncBodegasFromApi();
+      } catch (err) {
+        console.log("[BodegasListScreen] error sync:", err);
+        Alert.alert(
+          "Error",
+          err?.message ||
+            "No se pudieron cargar las bodegas desde el servidor."
+        );
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    cargar();
+  }, []);
 
   // --- helpers de navegación (funcionan con props o con navigation) ---
   const irMenu = () => {
@@ -144,6 +182,18 @@ export default function BodegasListScreen(props) {
     );
   };
 
+  // Estado de carga inicial
+  if (loading && (!bodegas || bodegas.length === 0)) {
+    return (
+      <View style={[st.screen, { alignItems: "center", justifyContent: "center" }]}>
+        <ActivityIndicator />
+        <Text style={{ marginTop: 8, color: "#64748b" }}>
+          Cargando bodegas...
+        </Text>
+      </View>
+    );
+  }
+
   return (
     <View style={st.screen}>
       {/* Header */}
@@ -245,13 +295,8 @@ export default function BodegasListScreen(props) {
           <Text style={st.bottomBtnText}>Menú principal</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[st.bottomBtn, st.bottomBtnActive]}
-          disabled
-        >
-          <Text
-            style={[st.bottomBtnText, st.bottomBtnTextActive]}
-          >
+        <TouchableOpacity style={[st.bottomBtn, st.bottomBtnActive]} disabled>
+          <Text style={[st.bottomBtnText, st.bottomBtnTextActive]}>
             Bodegas
           </Text>
         </TouchableOpacity>
@@ -363,7 +408,7 @@ const st = StyleSheet.create({
     position: "absolute",
     left: 16,
     right: 16,
-    bottom: 40, // más alto para evitar los gestos
+    bottom: 40,
     padding: 6,
     flexDirection: "row",
     backgroundColor: "#ffffff",

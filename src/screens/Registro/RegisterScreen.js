@@ -1,5 +1,4 @@
 // src/screens/Registro/RegisterScreen.js
-
 import React, { useMemo, useState } from "react";
 import {
   View,
@@ -10,6 +9,7 @@ import {
   ScrollView,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
+import { useApp } from "../../store";
 
 const COLORS = {
   bg: "#020817",
@@ -25,6 +25,7 @@ const COLORS = {
 
 export default function RegisterScreen() {
   const navigation = useNavigation();
+  const { users, saveUser } = useApp();
 
   const [nombre, setNombre] = useState("");
   const [rut, setRut] = useState(""); // solo cuerpo (sin DV)
@@ -78,6 +79,21 @@ export default function RegisterScreen() {
       setError("El RUT debe ser solo el número sin DV.");
       return;
     }
+    if (!correo.trim()) {
+      setError("Debes ingresar un correo.");
+      return;
+    }
+
+    // validar que el correo no exista ya
+    const email = correo.trim().toLowerCase();
+    const emailExists = users.some(
+      (u) => (u.correo || "").toLowerCase() === email
+    );
+    if (emailExists) {
+      setError("Ya existe un usuario con ese correo.");
+      return;
+    }
+
     if (!password || !confirm) {
       setError("Debes ingresar y confirmar la contraseña.");
       return;
@@ -92,7 +108,17 @@ export default function RegisterScreen() {
       return;
     }
 
-    // POR AHORA: solo mostramos mensaje y volvemos al login
+    // Guardar usuario como EMPLEADO activo en el store
+    saveUser({
+      nombre: nombre.trim(),
+      rut: rut.trim(),
+      correo: email,
+      password: password.trim(),
+      role: "empleado",
+      rol: "empleado",
+      active: true,
+    });
+
     setOkMsg("Cuenta creada. Ahora puedes iniciar sesión.");
     setNombre("");
     setRut("");
@@ -175,7 +201,7 @@ export default function RegisterScreen() {
           value={correo}
           onChangeText={setCorreo}
           autoCapitalize="none"
-          keyboardType="default"
+          keyboardType="email-address"
           placeholder="Crear correo"
           placeholderTextColor={COLORS.textSoft}
         />
@@ -193,18 +219,9 @@ export default function RegisterScreen() {
         <View style={styles.rulesBox}>
           <Text style={styles.rulesTitle}>Requisitos de seguridad</Text>
           <RuleLine ok={rules.len} text="Al menos 12 caracteres" />
-          <RuleLine
-            ok={rules.upper}
-            text="Incluye al menos una mayúscula (A-Z)"
-          />
-          <RuleLine
-            ok={rules.lower}
-            text="Incluye al menos una minúscula (a-z)"
-          />
-          <RuleLine
-            ok={rules.digit}
-            text="Incluye al menos un número (0-9)"
-          />
+          <RuleLine ok={rules.upper} text="Incluye al menos una mayúscula (A-Z)" />
+          <RuleLine ok={rules.lower} text="Incluye al menos una minúscula (a-z)" />
+          <RuleLine ok={rules.digit} text="Incluye al menos un número (0-9)" />
           <RuleLine
             ok={rules.symbol}
             text="Incluye al menos un símbolo (!@#$%&*…)"

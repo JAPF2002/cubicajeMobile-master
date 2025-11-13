@@ -8,16 +8,15 @@ export default function Menu() {
   const navigation = useNavigation();
   const { currentUser, logout } = useApp();
 
-  const nombre = currentUser?.nombre || currentUser?.name || "Invitado";
+  const userName = currentUser?.nombre || currentUser?.name || "Invitado";
+  const roleKey = currentUser?.role || currentUser?.rol || "invitado";
 
-  const roleLabel = !currentUser
-    ? "Invitado"
-    : currentUser.role === "admin" || currentUser.rol === "admin"
-    ? "Administrador"
-    : "Empleado";
-
-  const isAdmin =
-    currentUser?.role === "admin" || currentUser?.rol === "admin";
+  const roleLabel =
+    roleKey === "admin"
+      ? "Administrador"
+      : roleKey === "empleado"
+      ? "Empleado"
+      : "Invitado";
 
   const goToBodegas = () => {
     navigation.navigate("Bodegas"); // nombre de la tab
@@ -40,16 +39,19 @@ export default function Menu() {
   };
 
   const goToLogin = () => {
-    logout(); // limpiamos currentUser en el store
+    // limpiamos currentUser en el store y volvemos al login
+    logout();
     navigation.replace("Login");
   };
+
+  const isAdmin = roleKey === "admin";
 
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Menú Principal</Text>
 
       <Text style={styles.subtitle}>
-        Hola, <Text style={styles.bold}>{nombre}</Text> · Rol:{" "}
+        Hola, <Text style={styles.bold}>{userName}</Text> · Rol:{" "}
         <Text style={styles.bold}>{roleLabel}</Text>
       </Text>
 
@@ -73,7 +75,7 @@ export default function Menu() {
         <Text style={styles.btnTxt}>Solicitudes</Text>
       </TouchableOpacity>
 
-      {/* Gestión de usuarios solo admin */}
+      {/* Gestión de usuarios: solo Admin */}
       {isAdmin && (
         <TouchableOpacity style={styles.btn} onPress={goToUsers}>
           <Text style={styles.btnTxt}>Lista de usuarios</Text>

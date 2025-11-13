@@ -113,8 +113,12 @@ export default function BodegaFormScreen(props) {
         "La bodega se guardó correctamente.",
         [{ text: "OK", onPress: navegarALista }]
       );
-    } catch {
-      // saveBodega ya muestra Alert en caso de error
+    } catch (err) {
+      console.log("[BodegaFormScreen] Error guardando bodega:", err);
+      Alert.alert(
+        "Error",
+        err?.message || "No se pudo guardar la bodega. Intenta nuevamente."
+      );
     }
   };
 

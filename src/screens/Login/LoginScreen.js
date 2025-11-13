@@ -22,25 +22,29 @@ const COLORS = {
 
 export default function LoginScreen() {
   const navigation = useNavigation();
-  const { loginAsDemo } = useApp();
+  const { loginAsDemo, loginWithCredentials } = useApp();
 
   const [correo, setCorreo] = useState("admin@demo.cl");
   const [password, setPassword] = useState("admin123");
+  const [error, setError] = useState("");
 
   const irAlMain = () => {
     navigation.replace("Main");
   };
 
   const handleLogin = () => {
-    // TODO: aquí luego harás login real contra backend
+    setError("");
+    const res = loginWithCredentials(correo, password);
+    if (!res.ok) {
+      setError(res.error || "No se pudo iniciar sesión.");
+      return;
+    }
     irAlMain();
   };
 
   const quickLogin = (type) => {
     // "admin" o "empleado"
-    if (loginAsDemo) {
-      loginAsDemo(type);
-    }
+    loginAsDemo(type);
     irAlMain();
   };
 
@@ -76,6 +80,8 @@ export default function LoginScreen() {
           placeholder="Tu contraseña"
           placeholderTextColor={COLORS.textSoft}
         />
+
+        {error ? <Text style={styles.error}>{error}</Text> : null}
 
         <TouchableOpacity
           style={[styles.btn, styles.btnPrimary]}
@@ -211,5 +217,10 @@ const styles = StyleSheet.create({
   linkTextStrong: {
     color: COLORS.primary,
     fontWeight: "600",
+  },
+  error: {
+    color: COLORS.danger,
+    fontSize: 10,
+    marginTop: 4,
   },
 });

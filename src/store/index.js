@@ -1,4 +1,4 @@
-// src/store/index.js
+// cubicajeMobile-master/src/store/index.js
 import React, {
   createContext,
   useContext,
@@ -9,14 +9,17 @@ import React, {
 import { loadState, saveState } from "./localStore";
 import { vol, clampInt, pesoAClase, SIZE_CLASSES } from "./helpers";
 
-// --------- usuarios demo ---------
+// ⚠️ APIs de bodegas (msApiCubicaje)
+import { getBodegas, insertBodega, updateBodegaApi } from "../features/api";
+
+// --------- Usuarios demo ---------
 const adminUserDemo = {
   id: 1,
   nombre: "Admin Demo",
   correo: "admin@demo.cl",
   password: "admin123",
   role: "admin",
-  rol: "admin", // compatibilidad
+  rol: "admin",
   active: true,
 };
 
@@ -30,7 +33,7 @@ const empleadoDemo = {
   active: true,
 };
 
-// --------- estado inicial ---------
+// --------- Estado inicial ---------
 const initialState = {
   bodegas: [],
   items: [],
@@ -39,15 +42,15 @@ const initialState = {
   currentUser: null, // empieza deslogueado
 };
 
-// contexto
+// Contexto
 const AppContext = createContext(null);
 
-// ========= provider =========
+// ========= PROVIDER =========
 export function AppProvider({ children }) {
   const [state, setState] = useState(initialState);
   const [hydrated, setHydrated] = useState(false);
 
-  // cargar desde AsyncStorage
+  // Cargar desde AsyncStorage
   useEffect(() => {
     (async () => {
       try {
@@ -66,7 +69,7 @@ export function AppProvider({ children }) {
     })();
   }, []);
 
-  // guardar cuando cambie
+  // Guardar cuando cambie
   useEffect(() => {
     if (!hydrated) return;
     saveState(state).catch((e) =>
@@ -92,6 +95,33 @@ export function AppProvider({ children }) {
     });
   };
 
+  const loginWithCredentials = (correo, password) => {
+    const email = (correo || "").trim().toLowerCase();
+    const pwd = (password || "").trim();
+
+    if (!email || !pwd) {
+      return { ok: false, error: "Debes ingresar correo y contraseña." };
+    }
+
+    const user = state.users.find(
+      (u) =>
+        (u.correo || "").toLowerCase() === email &&
+        (u.password || "") === pwd &&
+        u.active !== false
+    );
+
+    if (!user) {
+      return { ok: false, error: "Correo o contraseña incorrectos." };
+    }
+
+    setState((prev) => ({
+      ...prev,
+      currentUser: user,
+    }));
+
+    return { ok: true, user };
+  };
+
   const logout = () => {
     setState((prev) => ({
       ...prev,
@@ -107,7 +137,10 @@ export function AppProvider({ children }) {
         nombre: nombre ?? prev.currentUser.nombre,
         correo: correo ?? prev.currentUser.correo,
       };
-      // (password no se guarda realmente, solo ejemplo)
+      if (password) {
+        updated.password = password;
+      }
+
       const users = prev.users.map((u) =>
         u.id === updated.id ? { ...u, ...updated } : u
       );
@@ -119,10 +152,12 @@ export function AppProvider({ children }) {
     });
   };
 
-  // ========= BODEGAS =========
+  // ========= HELPERS GENERALES =========
 
   const nextId = (list) =>
     list.length ? Math.max(...list.map((x) => Number(x.id) || 0)) + 1 : 1;
+
+  // ========= BODEGAS =========
 
   const metricsOf = (bodega) => {
     if (!bodega) {
@@ -147,18 +182,133 @@ export function AppProvider({ children }) {
     return { capacidad, ocupado, libre };
   };
 
-  const saveBodega = async (bodega) => {
-    setState((prev) => {
-      if (bodega.id) {
-        const bodegas = prev.bodegas.map((b) =>
-          b.id === bodega.id ? { ...b, ...bodega } : b
-        );
-        return { ...prev, bodegas };
+  // Cargar bodegas desde la API y guardarlas en el estado global
+  const syncBodegasFromApi = async () => {
+    try {
+      const res = await getBodegas();
+
+      // 👀 Log para ver qué llega realmente del helper
+      console.log("[syncBodegasFromApi] res bruto:", res);
+
+      const error = res?.error ?? false;
+      const topBody = res?.body ?? res?.data ?? res;
+
+      if (error) {
+        throw new Error(topBody?.message || "Error obteniendo bodegas");
       }
-      const id = nextId(prev.bodegas);
-      const nueva = { ...bodega, id };
-      return { ...prev, bodegas: [...prev.bodegas, nueva] };
-    });
+
+      // Intentar encontrar el array de bodegas
+      let rows = [];
+
+      if (Array.isArray(res)) {
+        rows = res;
+      } else if (Array.isArray(res?.body?.body)) {
+        rows = res.body.body;
+      } else if (Array.isArray(res?.body)) {
+        rows = res.body;
+      } else if (Array.isArray(topBody?.body)) {
+        rows = topBody.body;
+      } else if (Array.isArray(topBody)) {
+        rows = topBody;
+      }
+
+      console.log("[syncBodegasFromApi] rows detectadas:", rows.length);
+
+      const bodegasFromDb = rows.map((row) => ({
+        id: Number(row.id_bodega),
+        nombre: row.nombre,
+        ciudad: row.ciudad || "",
+        direccion: row.direccion || "",
+        ancho: Number(row.ancho || 0),
+        alto: Number(row.alto || 0),
+        largo: Number(row.largo || 0),
+        // viene como is_active desde el SELECT:
+        // activo AS is_active
+        active: row.is_active === 1 || row.is_active === true,
+      }));
+
+      console.log(
+        "[syncBodegasFromApi] bodegas mapeadas:",
+        bodegasFromDb.length
+      );
+
+      setState((prev) => ({
+        ...prev,
+        bodegas: bodegasFromDb,
+      }));
+    } catch (err) {
+      console.log("[syncBodegasFromApi] error:", err);
+      throw err;
+    }
+  };
+
+  // Guardar/actualizar bodega llamando a la API
+  const saveBodega = async (bodega) => {
+    const isUpdate = !!bodega.id;
+    const userId = state.currentUser?.id ?? null;
+
+    const payload = {
+      nombre: (bodega.nombre || "").trim(),
+      ciudad: (bodega.ciudad || "").trim(),
+      direccion: (bodega.direccion || "").trim(),
+      ancho: Number(bodega.ancho) || 0,
+      largo: Number(bodega.largo) || 0,
+      alto: Number(bodega.alto) || 0,
+      id_usuario: userId,
+      activo: bodega.active ? 1 : 0,
+    };
+
+    const normalize = (res) => {
+      if (!res) return { error: false, body: null, message: null };
+      const error = res.error ?? false;
+      const body = res.body ?? res.data ?? res;
+      const message = res.message ?? body?.message ?? body?.error ?? null;
+      return { error, body, message };
+    };
+
+    try {
+      if (isUpdate) {
+        // UPDATE
+        const res = await updateBodegaApi({
+          ...payload,
+          id_bodega: bodega.id,
+          id: bodega.id,
+        });
+        const { error, body, message } = normalize(res);
+        if (error) {
+          throw new Error(message || "Error actualizando bodega");
+        }
+
+        setState((prev) => ({
+          ...prev,
+          bodegas: prev.bodegas.map((b) =>
+            b.id === bodega.id ? { ...b, ...bodega } : b
+          ),
+        }));
+
+        return body;
+      } else {
+        // INSERT
+        const res = await insertBodega(payload);
+        const { error, body, message } = normalize(res);
+        if (error) {
+          throw new Error(message || "Error creando bodega");
+        }
+
+        const idFromDb = body?.id_bodega ?? body?.id ?? null;
+
+        setState((prev) => {
+          const id = idFromDb || nextId(prev.bodegas);
+          const nueva = { ...bodega, id };
+          return { ...prev, bodegas: [...prev.bodegas, nueva] };
+        });
+
+        return body;
+      }
+    } catch (err) {
+      console.log("[saveBodega] error:", err);
+      throw err;
+    }
   };
 
   const setBodegaActive = (id, active) => {
@@ -204,7 +354,6 @@ export function AppProvider({ children }) {
       const cant = clampInt(cantidad, 1);
       if (!cant || cant > total) return prev;
 
-      // restar del origen
       const restante = total - cant;
       items[idx] = { ...item, cantidad: restante, bodegaId: fromBodegaId };
 
@@ -212,7 +361,6 @@ export function AppProvider({ children }) {
         items.splice(idx, 1);
       }
 
-      // crear / sumar en destino
       const destinoIdx = items.findIndex(
         (it) =>
           it.bodegaId === toBodegaId &&
@@ -273,7 +421,6 @@ export function AppProvider({ children }) {
         const users = prev.users.map((u) =>
           u.id === user.id ? { ...u, ...user } : u
         );
-        // si es el currentUser, actualizarlo también
         const currentUser =
           prev.currentUser && prev.currentUser.id === user.id
             ? { ...prev.currentUser, ...user }
@@ -307,7 +454,7 @@ export function AppProvider({ children }) {
     }));
   };
 
-  // --------- value del contexto ---------
+  // --------- VALUE DEL CONTEXTO ---------
   const value = useMemo(
     () => ({
       ...state,
@@ -320,6 +467,7 @@ export function AppProvider({ children }) {
 
       // auth
       loginAsDemo,
+      loginWithCredentials,
       logout,
       updateCurrentUser,
 
@@ -327,6 +475,7 @@ export function AppProvider({ children }) {
       metricsOf,
       saveBodega,
       setBodegaActive,
+      syncBodegasFromApi, // 👈 aquí está expuesto
 
       // items
       saveItem,
@@ -348,7 +497,7 @@ export function AppProvider({ children }) {
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }
 
-// hook para usar el store
+// Hook para usar el store
 export function useApp() {
   const ctx = useContext(AppContext);
   if (!ctx) {
@@ -357,5 +506,5 @@ export function useApp() {
   return ctx;
 }
 
-// re-export helpers por comodidad
+// Re-export helpers
 export { vol, clampInt, pesoAClase, SIZE_CLASSES };

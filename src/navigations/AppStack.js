@@ -1,30 +1,43 @@
 // src/navigations/AppStack.js
 import React from "react";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
+
 import AppTab from "./AppTab";
-import AuthScreen from "../screens/AuthScreen";
-import AdminUsers from "../screens/AdminUsers";
-import UsersListScreen from "../screens/UsersListScreen";
-import Bodega3DScreen from "../features/bodega3d/Bodega3DScreen"; // 👈 importar
-import { useApp } from "../store";
+
+// Auth
+import LoginScreen from "../screens/Login/LoginScreen";
+import RegisterScreen from "../screens/Registro/RegisterScreen";
+
+// Usuario / administración
+import ProfileScreen from "../screens/Perfil/ProfileScreen";
+import SolicitudesScreen from "../screens/Solicitudes/SolicitudesScreen";
+import UserFormScreen from "../screens/UserList/UserFormScreen";
+import UsersListScreen from "../screens/UserList/UsersListScreen";
+
+// Bodega 3D
+import Bodega3DScreen from "../features/bodega3d/Bodega3DScreen";
 
 const Stack = createNativeStackNavigator();
 
 export default function AppStack() {
-  const { currentUser } = useApp();
-
   return (
     <Stack.Navigator
       screenOptions={{ headerShown: false }}
-      initialRouteName="Main"
+      initialRouteName="Login"   // siempre parte en Login por ahora
     >
+      {/* Autenticación */}
+      <Stack.Screen name="Login" component={LoginScreen} />
+      <Stack.Screen name="Register" component={RegisterScreen} />
+
       {/* Tabs principales */}
       <Stack.Screen name="Main" component={AppTab} />
 
-      {/* Auth / Admin */}
-      <Stack.Screen name="Auth" component={AuthScreen} />
-      <Stack.Screen name="AdminUsers" component={AdminUsers} />
+      {/* Pantallas de usuario / administración */}
+      <Stack.Screen name="Profile" component={ProfileScreen} />
+      <Stack.Screen name="Solicitudes" component={SolicitudesScreen} />
+      <Stack.Screen name="AdminUsers" component={UsersListScreen} />
       <Stack.Screen name="UsersList" component={UsersListScreen} />
+      <Stack.Screen name="UserForm" component={UserFormScreen} />
 
       {/* Vista 3D de Bodega */}
       <Stack.Screen

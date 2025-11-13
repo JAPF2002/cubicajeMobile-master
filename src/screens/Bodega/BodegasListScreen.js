@@ -1,4 +1,4 @@
-// src/screens/Bodega/BodegasListScreen.js
+// cubicajeMobile-master/src/screens/Bodega/BodegasListScreen.js
 import React, { useState, useEffect } from "react";
 import {
   View,
@@ -15,7 +15,6 @@ import { useApp } from "../../store";
 export default function BodegasListScreen(props) {
   const { goToMenu, goToBodegaFormNew, goToBodegaFormEdit, navigation } = props;
 
-  // 👈 ahora también traemos syncBodegasFromApi
   const {
     bodegas,
     setBodegaActive,
@@ -24,13 +23,6 @@ export default function BodegasListScreen(props) {
     syncBodegasFromApi,
   } = useApp();
 
-    console.log(
-    "[BodegasListScreen] bodegas en store:",
-    bodegas.length,
-    bodegas
-  );
-
-
   const isAdmin = currentUser?.role === "admin";
 
   const [search, setSearch] = useState("");
@@ -38,7 +30,7 @@ export default function BodegasListScreen(props) {
   const [cityFilter, setCityFilter] = useState("all"); // all | Iquique | Alto Hospicio
   const [loading, setLoading] = useState(false);
 
-  // --- cargar bodegas desde la API al entrar a la pantalla ---
+  // Cargar bodegas desde la API al entrar a la pantalla
   useEffect(() => {
     const cargar = async () => {
       try {
@@ -59,7 +51,6 @@ export default function BodegasListScreen(props) {
     cargar();
   }, []);
 
-  // --- helpers de navegación (funcionan con props o con navigation) ---
   const irMenu = () => {
     if (typeof goToMenu === "function") return goToMenu();
     if (navigation?.navigate) return navigation.navigate("Menu");
@@ -77,7 +68,7 @@ export default function BodegasListScreen(props) {
       return navigation.navigate("BodegaForm", { bodega: b });
   };
 
-    const adminToggle = (b) => {
+  const adminToggle = (b) => {
     const doToggle = async (nuevoEstado) => {
       try {
         await setBodegaActive(b.id, nuevoEstado);
@@ -104,12 +95,11 @@ export default function BodegasListScreen(props) {
         ]
       );
     } else {
-      // activar sin confirmación extra
       doToggle(true);
     }
   };
 
-
+  // 👇 AQUÍ conectamos con la pantalla 3D
   const ver3D = (b) => {
     if (!b.ancho || !b.alto || !b.largo) {
       return Alert.alert(
@@ -117,7 +107,18 @@ export default function BodegasListScreen(props) {
         "Esta bodega no tiene dimensiones definidas."
       );
     }
-    // Más adelante aquí navegamos a la pantalla 3D real
+
+    if (navigation?.navigate) {
+      return navigation.navigate("Bodega3D", {
+        bodegaId: b.id,
+        nombre: b.nombre,
+        ancho: b.ancho,
+        alto: b.alto,
+        largo: b.largo,
+      });
+    }
+
+    // fallback por si no hay navigation (por si acaso)
     Alert.alert(
       "Vista 3D",
       `Abrir vista 3D de "${b.nombre}" (${b.ancho}x${b.alto}x${b.largo} m).`
@@ -196,10 +197,11 @@ export default function BodegasListScreen(props) {
     );
   };
 
-  // Estado de carga inicial
   if (loading && (!bodegas || bodegas.length === 0)) {
     return (
-      <View style={[st.screen, { alignItems: "center", justifyContent: "center" }]}>
+      <View
+        style={[st.screen, { alignItems: "center", justifyContent: "center" }]}
+      >
         <ActivityIndicator />
         <Text style={{ marginTop: 8, color: "#64748b" }}>
           Cargando bodegas...
@@ -315,7 +317,6 @@ export default function BodegasListScreen(props) {
           </Text>
         </TouchableOpacity>
 
-        {/* Crear bodega solo admin */}
         {isAdmin && (
           <TouchableOpacity style={st.bottomBtn} onPress={irNuevaBodega}>
             <Text style={st.bottomBtnText}>Crear bodega</Text>
@@ -332,7 +333,7 @@ const st = StyleSheet.create({
     backgroundColor: "#f3f4f6",
     paddingHorizontal: 16,
     paddingTop: 18,
-    paddingBottom: 140, // reserva extra
+    paddingBottom: 140,
   },
   headerRow: { marginBottom: 8 },
   title: { fontSize: 20, fontWeight: "700", color: "#111827" },

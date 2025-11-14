@@ -243,73 +243,81 @@ export function AppProvider({ children }) {
   };
 
   // Guardar/actualizar bodega llamando a la API
-  const saveBodega = async (bodega) => {
-    const isUpdate = !!bodega.id;
-    const userId = state.currentUser?.id ?? null;
+// Guardar/actualizar bodega llamando a la API
+const saveBodega = async (bodega) => {
+  const isUpdate = !!bodega.id;
+  const userId = state.currentUser?.id ?? null;
 
-    const payload = {
-      nombre: (bodega.nombre || "").trim(),
-      ciudad: (bodega.ciudad || "").trim(),
-      direccion: (bodega.direccion || "").trim(),
-      ancho: Number(bodega.ancho) || 0,
-      largo: Number(bodega.largo) || 0,
-      alto: Number(bodega.alto) || 0,
-      id_usuario: userId,
-      activo: bodega.active ? 1 : 0,
-    };
+  const payload = {
+    nombre: (bodega.nombre || "").trim(),
+    ciudad: (bodega.ciudad || "").trim(),
+    direccion: (bodega.direccion || "").trim(),
+    ancho: Number(bodega.ancho) || 0,
+    largo: Number(bodega.largo) || 0,
+    alto: Number(bodega.alto) || 0,
+    id_usuario: userId,
+    activo: bodega.active ? 1 : 0,
 
-    const normalize = (res) => {
-      if (!res) return { error: false, body: null, message: null };
-      const error = res.error ?? false;
-      const body = res.body ?? res.data ?? res;
-      const message = res.message ?? body?.message ?? body?.error ?? null;
-      return { error, body, message };
-    };
-
-    try {
-      if (isUpdate) {
-        // UPDATE
-        const res = await updateBodegaApi({
-          ...payload,
-          id_bodega: bodega.id,
-          id: bodega.id,
-        });
-        const { error, body, message } = normalize(res);
-        if (error) {
-          throw new Error(message || "Error actualizando bodega");
-        }
-
-        setState((prev) => ({
-          ...prev,
-          bodegas: prev.bodegas.map((b) =>
-            b.id === bodega.id ? { ...b, ...bodega } : b
-          ),
-        }));
-
-        return body;
-      } else {
-        // INSERT
-        const res = await insertBodega(payload);
-        const { error, body, message } = normalize(res);
-        if (error) {
-          throw new Error(message || "Error creando bodega");
-        }
-
-        const idFromDb = body?.id_bodega ?? body?.id ?? null;
-
-        setState((prev) => {
-          const id = idFromDb || nextId(prev.bodegas);
-          const nueva = { ...bodega, id };
-          return { ...prev, bodegas: [...prev.bodegas, nueva] };
-        });
-
-        return body;
-      }
-    } catch (err) {
-      console.log("[saveBodega] error:", err);
-      throw err;
-    }
+    // 👇 ESTA ES LA CLAVE: mandamos el layout al backend
+    // { ancho, largo, mapa_json } que arma BodegaFormScreen
+    layout: bodega.layout || null,
   };
+
+  const normalize = (res) => {
+    if (!res) return { error: false, body: null, message: null };
+    const error = res.error ?? false;
+    const body = res.body ?? res.data ?? res;
+    const message = res.message ?? body?.message ?? body?.error ?? null;
+    return { error, body, message };
+  };
+
+  try {
+    if (isUpdate) {
+      // UPDATE
+      const res = await updateBodegaApi({
+        ...payload,
+        id_bodega: bodega.id,
+        id: bodega.id,
+      });
+
+      const { error, body, message } = normalize(res);
+      if (error) {
+        throw new Error(message || "Error actualizando bodega");
+      }
+
+      // Actualizar en el estado global
+      setState((prev) => ({
+        ...prev,
+        bodegas: prev.bodegas.map((b) =>
+          b.id === bodega.id ? { ...b, ...bodega } : b
+        ),
+      }));
+
+      return body;
+    } else {
+      // INSERT
+      const res = await insertBodega(payload);
+      const { error, body, message } = normalize(res);
+      if (error) {
+        throw new Error(message || "Error creando bodega");
+      }
+
+      const idFromDb = body?.id_bodega ?? body?.id ?? null;
+
+      setState((prev) => {
+        const id = idFromDb || nextId(prev.bodegas);
+        const nueva = { ...bodega, id };
+        return { ...prev, bodegas: [...prev.bodegas, nueva] };
+      });
+
+      return body;
+    }
+  } catch (err) {
+    console.log("[saveBodega] error:", err);
+    throw err;
+  }
+};
+
 
   // Cambiar estado activo/inactivo EN BD + estado global
   const setBodegaActive = async (id, active) => {

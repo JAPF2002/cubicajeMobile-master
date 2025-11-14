@@ -1,255 +1,227 @@
 // src/components/Tablero/Tablero.js
+import React, { useEffect, useState } from "react";
+import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 
-import React, { useEffect } from "react";
-import { View, Text, StyleSheet, Pressable, ScrollView } from "react-native";
-import { useGridMap } from "./useGridMap";
+const MODOS = {
+  D: { label: "Disponible", color: "#dcfce7", borderColor: "#16a34a" },
+  O: { label: "Ocupada", color: "#fee2e2", borderColor: "#dc2626" },
+  B: { label: "Bloqueada", color: "#e5e7eb", borderColor: "#6b7280" },
+  A: { label: "Altura libre", color: "#e0f2fe", borderColor: "#0284c7" },
+};
 
-function Tablero(props) {
-  console.log(props)
-  const {
-    gridMap,
-    modoActual,
-    setModoActual,
-    handleCellClick,
-    estadosContados,
-    ESTADOS_CELDA,
-  } = useGridMap(props);
+export default function Tablero({
+  ancho = 0,
+  largo = 0,
+  mapaInicial = {},
+  onGridMapChange,
+}) {
+  const [gridMap, setGridMap] = useState({});
+  const [modoActual, setModoActual] = useState("D");
 
-  const { largo, ancho, onGridMapChange } = props;
-
+  // Cuando cambie el mapaInicial o las dimensiones, lo cargamos
   useEffect(() => {
-    if (typeof onGridMapChange === "function") {
-      onGridMapChange(gridMap);
+    if (!mapaInicial || typeof mapaInicial !== "object") {
+      setGridMap({});
+      return;
     }
-  }, [gridMap, onGridMapChange]);
+    setGridMap(mapaInicial);
+  }, [mapaInicial, ancho, largo]);
 
-  if (!largo || !ancho || largo <= 0 || ancho <= 0) {
+  const totalCeldas = Math.max(0, ancho) * Math.max(0, largo);
+
+  const handleCellPress = (index) => {
+    if (!totalCeldas) return;
+
+    setGridMap((prev) => {
+      const nuevo = { ...prev, [index]: modoActual };
+      if (onGridMapChange) {
+        onGridMapChange(nuevo);
+      }
+      return nuevo;
+    });
+  };
+
+  const renderCell = (index) => {
+    const value = gridMap[index] || "D";
+    const config = MODOS[value] || MODOS.D;
+
     return (
-      <View style={styles.gridErrorMessage}>
-        <Text>El "Largo" y "Ancho" deben ser mayores a cero.</Text>
+      <TouchableOpacity
+        key={index}
+        style={[
+          styles.cell,
+          {
+            backgroundColor: config.color,
+            borderColor: config.borderColor,
+          },
+        ]}
+        onPress={() => handleCellPress(index)}
+        activeOpacity={0.7}
+      >
+        <Text style={styles.cellText}>{value}</Text>
+      </TouchableOpacity>
+    );
+  };
+
+  if (!ancho || !largo) {
+    return (
+      <View style={styles.emptyBox}>
+        <Text style={styles.emptyText}>
+          Ingresa ancho y largo para ver el mapa.
+        </Text>
       </View>
     );
   }
 
-  const totalCeldas = largo * ancho;
-  const celdasArray = Array.from({ length: totalCeldas }, (_, index) => index);
-
-  const CELL_STYLE_BY_STATE = {
-    [ESTADOS_CELDA.DISPONIBLE]: styles.gridCellDisponible,
-    [ESTADOS_CELDA.OCUPADO]: styles.gridCellOcupado,
-    [ESTADOS_CELDA.BLOQUEADO]: styles.gridCellBloqueado,
-  };
-
-  const BUTTON_STYLE_BY_STATE = {
-    [ESTADOS_CELDA.DISPONIBLE]: styles.menuButtonDisponible,
-    [ESTADOS_CELDA.OCUPADO]: styles.menuButtonOcupado,
-    [ESTADOS_CELDA.BLOQUEADO]: styles.menuButtonBloqueado,
-  };
-
-  const renderTextoModo = () => {
-    if (modoActual === ESTADOS_CELDA.DISPONIBLE) return "Disponible";
-    if (modoActual === ESTADOS_CELDA.OCUPADO) return "Ocupado";
-    return "Bloqueado";
-  };
-
-  const textoModo = renderTextoModo();
+  const filas = [];
+  for (let fila = 0; fila < largo; fila++) {
+    const rowCells = [];
+    for (let col = 0; col < ancho; col++) {
+      const index = fila * ancho + col;
+      rowCells.push(renderCell(index));
+    }
+    filas.push(
+      <View key={fila} style={styles.row}>
+        {rowCells}
+      </View>
+    );
+  }
 
   return (
-    <View style={styles.gridComponentWrapper}>
-      <Text style={styles.gridTitle}>Panel de Control de la bodega</Text>
-
-      {/* Menú de modos */}
-      <View style={styles.gridMenu}>
-        {Object.values(ESTADOS_CELDA).map((estado) => (
-          <Pressable
-            key={estado}
-            onPress={() => setModoActual(estado)}
-            style={[
-              styles.menuButton,
-              BUTTON_STYLE_BY_STATE[estado],
-              modoActual === estado && styles.menuButtonActive,
-            ]}
-          >
-            <Text style={styles.menuButtonText}>
-              {estado === ESTADOS_CELDA.DISPONIBLE && "Disponible"}
-              {estado === ESTADOS_CELDA.OCUPADO && "Ocupado"}
-              {estado === ESTADOS_CELDA.BLOQUEADO && "Bloqueado"}
-            </Text>
-            <Text style={styles.menuButtonCount}>
-              ({estadosContados[estado] ?? 0})
-            </Text>
-          </Pressable>
-        ))}
-      </View>
-
-      {/* Texto modo actual */}
-      <Text style={styles.gridStatusText}>
-        Modo actual:{" "}
-        <Text
-          style={
-            modoActual === ESTADOS_CELDA.DISPONIBLE
-              ? styles.textDisponible
-              : modoActual === ESTADOS_CELDA.OCUPADO
-              ? styles.textOcupado
-              : styles.textBloqueado
-          }
-        >
-          {textoModo}
-        </Text>
-        . Haz clic en una celda para cambiar su estado.
-      </Text>
-
-      {/* Grid */}
-      <ScrollView
-        style={styles.gridScroll}
-        contentContainerStyle={[
-          styles.gridContainer,
-          { width: "100%" },
-        ]}
-      >
-        {celdasArray.map((index) => {
-          const cellState =
-            gridMap[index] || ESTADOS_CELDA.DISPONIBLE;
-          const estadoStyle = CELL_STYLE_BY_STATE[cellState];
-
+    <View style={styles.wrapper}>
+      {/* Selector de modo */}
+      <View style={styles.modesRow}>
+        {Object.entries(MODOS).map(([key, cfg]) => {
+          const selected = modoActual === key;
           return (
-            <Pressable
-              key={index}
-              onPress={() => handleCellClick(index)}
+            <TouchableOpacity
+              key={key}
               style={[
-                styles.gridCell,
-                estadoStyle,
-                {
-                  width: `${100 / ancho}%`, // divide el ancho en "ancho" columnas
-                },
+                styles.modeChip,
+                selected && styles.modeChipSelected,
               ]}
+              onPress={() => setModoActual(key)}
             >
-              <Text style={styles.gridCellText}>{cellState}</Text>
-            </Pressable>
+              <Text
+                style={[
+                  styles.modeChipText,
+                  selected && styles.modeChipTextSelected,
+                ]}
+              >
+                {cfg.label} ({key})
+              </Text>
+            </TouchableOpacity>
           );
         })}
-      </ScrollView>
+      </View>
+
+      <Text style={styles.modeHelp}>
+        Modo actual: {MODOS[modoActual].label}. Toca una celda para marcarla
+        con esta letra.
+      </Text>
+
+      {/* Grilla */}
+      <View style={styles.board}>{filas}</View>
+
+      {/* Leyenda */}
+      <View style={styles.legend}>
+        <Text style={styles.legendTitle}>Leyenda</Text>
+        <Text style={styles.legendText}>D = disponible</Text>
+        <Text style={styles.legendText}>O = ocupada</Text>
+        <Text style={styles.legendText}>B = bloqueada / pasillo</Text>
+        <Text style={styles.legendText}>A = hay espacio en altura</Text>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  // Contenedor principal
-  gridComponentWrapper: {
-    padding: 16,
+  wrapper: {
+    marginTop: 8,
+    padding: 10,
+    backgroundColor: "#f9fafb",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
   },
-  gridTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    marginBottom: 16,
-  },
-
-  // Menú
-  gridMenu: {
+  modesRow: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 8,
-    marginBottom: 16,
+    gap: 6,
+    justifyContent: "flex-start",
+    marginBottom: 6,
   },
-  menuButton: {
-    flexDirection: "row",
-    alignItems: "center",
+  modeChip: {
+    paddingHorizontal: 8,
     paddingVertical: 4,
-    paddingHorizontal: 6,
-    borderRadius: 6,
-    backgroundColor: "#6b7280",
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#d4d4d8",
+    backgroundColor: "#f3f4f6",
+    marginRight: 6,
+    marginBottom: 6,
   },
-  menuButtonText: {
+  modeChipSelected: {
+    backgroundColor: "#2563eb",
+    borderColor: "#2563eb",
+  },
+  modeChipText: {
+    fontSize: 11,
+    color: "#111827",
+  },
+  modeChipTextSelected: {
     color: "#ffffff",
     fontWeight: "600",
-    fontSize: 12,
   },
-  menuButtonCount: {
-    marginLeft: 8,
-    fontSize: 14,
-    color: "#ffffff",
-    opacity: 0.9,
-    fontWeight: "500",
+  modeHelp: {
+    fontSize: 11,
+    color: "#6b7280",
+    marginBottom: 6,
   },
-  menuButtonDisponible: {
-    backgroundColor: "#10b981",
+  board: {
+    width: "100%",        // 🔹 ocupa todo el ancho del contenedor
+    alignSelf: "center",
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
   },
-  menuButtonOcupado: {
-    backgroundColor: "#ef4444",
-  },
-  menuButtonBloqueado: {
-    backgroundColor: "#6b7280",
-  },
-  menuButtonActive: {
-    borderWidth: 2,
-    borderColor: "#818cf8",
-  },
-
-  // Texto estado
-  gridStatusText: {
-    marginBottom: 16,
-    color: "#374151",
-    fontSize: 14,
-  },
-  textDisponible: {
-    color: "#059669",
-    fontWeight: "600",
-  },
-  textOcupado: {
-    color: "#dc2626",
-    fontWeight: "600",
-  },
-  textBloqueado: {
-    color: "#4b5563",
-    fontWeight: "600",
-  },
-
-  // Grid
-  gridScroll: {
-    maxHeight: "70%",
-  },
-  gridContainer: {
+  row: {
     flexDirection: "row",
-    flexWrap: "wrap",
-    borderWidth: 1,
-    borderColor: "#ccc",
   },
-  gridCell: {
-    aspectRatio: 1,
-    borderWidth: 1,
-    borderColor: "#e0e0e0",
+  cell: {
+    flex: 1,
+    aspectRatio: 1,       // 🔹 cuadradas, grandes
+    borderWidth: 0.5,
+    alignItems: "center",
     justifyContent: "center",
-    alignItems: "center",
   },
-  gridCellText: {
-    fontWeight: "700",
+  cellText: {
     fontSize: 14,
+    fontWeight: "600",
+    color: "#111827",
   },
-
-  // Colores de celdas
-  gridCellDisponible: {
-    backgroundColor: "#d1fae5",
-    borderColor: "#10b981",
-  },
-  gridCellOcupado: {
-    backgroundColor: "#fee2e2",
-    borderColor: "#ef4444",
-  },
-  gridCellBloqueado: {
-    backgroundColor: "#e5e7eb",
-    borderColor: "#6b7280",
-  },
-
-  // Error
-  gridErrorMessage: {
-    marginTop: 20,
-    padding: 16,
+  emptyBox: {
+    marginTop: 8,
+    padding: 10,
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: "#fcd34d",
-    borderRadius: 6,
-    backgroundColor: "#fefce8",
-    alignItems: "center",
+    borderColor: "#e5e7eb",
+    backgroundColor: "#f9fafb",
+  },
+  emptyText: {
+    fontSize: 11,
+    color: "#6b7280",
+    textAlign: "center",
+  },
+  legend: {
+    marginTop: 8,
+  },
+  legendTitle: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#374151",
+  },
+  legendText: {
+    fontSize: 11,
+    color: "#6b7280",
   },
 });
-
-export default Tablero;

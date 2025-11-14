@@ -37,6 +37,28 @@ export default function BodegaFormScreen(props) {
   );
   const [saving, setSaving] = useState(false);
 
+  // 🟦 Estado para el mapa del Tablero
+  const [gridMap, setGridMap] = useState(() => {
+    // Aquí intentamos leer si viene algo desde la bodega (editar)
+    // Ajusta estos nombres si tu API usa otro campo.
+    const raw =
+      editingBodega?.mapa_json ||
+      editingBodega?.layout_mapa_json ||
+      editingBodega?.layout?.mapa_json ||
+      null;
+
+    if (!raw) return {};
+    try {
+      if (typeof raw === "string") {
+        return JSON.parse(raw);
+      }
+      return raw;
+    } catch (e) {
+      console.log("[BodegaFormScreen] error parse mapa_json:", e);
+      return {};
+    }
+  });
+
   useEffect(() => {
     if (isEdit) {
       navigation?.setOptions?.({ title: "Editar bodega" });
@@ -86,6 +108,14 @@ export default function BodegaFormScreen(props) {
       largo: largoNum,
       alto: altoNum,
       active,
+
+      // 🟦 Enviamos también el layout de la bodega
+      // Ajusta el nombre del campo según tu backend (por ejemplo: layout, mapa_json, etc.).
+      layout: {
+        ancho: anchoNum,
+        largo: largoNum,
+        mapa_json: gridMap,
+      },
     };
 
     try {
@@ -227,15 +257,21 @@ export default function BodegaFormScreen(props) {
           />
         </View>
 
-        {/* TABLERO (solo visual) */}
+        {/* TABLERO con mapa y letra A */}
         <View style={{ marginTop: 20 }}>
           <Text style={st.label}>Mapa de posiciones (opcional)</Text>
           <Text style={st.helpText}>
-            Marca las posiciones disponibles/bloqueadas. Esto por ahora es solo
-            visual; más adelante lo podemos guardar en la base de datos.
+            Marca las posiciones disponibles, ocupadas, bloqueadas o con espacio
+            en altura. Esto por ahora es solo visual; más adelante lo podemos
+            usar para la vista 3D y el algoritmo de cubicaje.
           </Text>
 
-          <Tablero ancho={anchoTablero} largo={largoTablero} />
+          <Tablero
+            ancho={anchoTablero}
+            largo={largoTablero}
+            mapaInicial={gridMap}
+            onGridMapChange={setGridMap}
+          />
         </View>
       </ScrollView>
 

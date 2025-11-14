@@ -1,49 +1,88 @@
-import { useState, useEffect, useMemo } from "react";
+// src/components/Tablero/useGridMap.js
+import { useEffect, useMemo, useState } from "react";
 
-const ESTADOS_CELDA = {
+export const ESTADOS_CELDA = {
   DISPONIBLE: "D",
   OCUPADO: "O",
   BLOQUEADO: "B",
+  CON_ESPACIO_SUPERIOR: "A", // 👈 NUEVO ESTADO
 };
 
-export function useGridMap({ largo, ancho, mapaInicial = null }) {
-  const [modoActual, setModoActual] = useState(ESTADOS_CELDA.DISPONIBLE);
+export default function useGridMap({
+  ancho = 0,
+  largo = 0,
+  mapaInicial = {},
+  onGridMapChange,
+}) {
   const [gridMap, setGridMap] = useState({});
 
-  useEffect(() => {
-    if (mapaInicial && Object.keys(mapaInicial).length > 0) {
-      setGridMap(mapaInicial);
-    } else if (largo > 0 && ancho > 0) {
-      const newGridMap = {};
-      const totalCeldas = largo * ancho;
-      for (let i = 0; i < totalCeldas; i++) {
-        newGridMap[i] = ESTADOS_CELDA.DISPONIBLE;
-      }
-      setGridMap(newGridMap);
-    } else {
-      setGridMap({});
-    }
-  }, [largo, ancho, mapaInicial]);
+  const totalCeldas = useMemo(() => {
+    const a = Number(ancho) || 0;
+    const l = Number(largo) || 0;
+    return a > 0 && l > 0 ? a * l : 0;
+  }, [ancho, largo]);
 
+  // Inicializar el mapa cuando cambian las dimensiones o el mapaInicial
+  useEffect(() => {
+    if (totalCeldas <= 0) {
+      setGridMap({});
+      return;
+    }
+
+    // partimos con todo disponible
+    const nuevo = {};
+    for (let i = 0; i < totalCeldas; i++) {
+      nuevo[i] = ESTADOS_CELDA.DISPONIBLE;
+    }
+
+    // mezclamos con el mapaInicial (si viene algo desde BD)
+    if (mapaInicial && typeof mapaInicial === "object") {
+      Object.keys(mapaInicial).forEach((key) => {
+        const valor = mapaInicial[key];
+        if (Object.values(ESTADOS_CELDA).includes(valor)) {
+          nuevo[key] = valor;
+        }
+      });
+    }
+
+    setGridMap(nuevo);
+  }, [totalCeldas, mapaInicial]);
+
+  // 🔁 Modo actual: qué letra pintamos al hacer click
+  const [modoActual, setModoActual] = useState(ESTADOS_CELDA.DISPONIBLE);
+
+  // Click en celda: pone / quita el estado seleccionado
   const handleCellClick = (index) => {
     setGridMap((prevGridMap) => {
-      const currentCellState = prevGridMap[index] || ESTADOS_CELDA.DISPONIBLE;
-      const newState =
-        currentCellState === modoActual ? ESTADOS_CELDA.DISPONIBLE : modoActual;
+      const currentCellState =
+        prevGridMap[index] || ESTADOS_CELDA.DISPONIBLE;
 
-      return {
+      // Si hago click con el mismo modo => vuelve a "Disponible"
+      const newState =
+        currentCellState === modoActual
+          ? ESTADOS_CELDA.DISPONIBLE
+          : modoActual;
+
+      const newGrid = {
         ...prevGridMap,
         [index]: newState,
       };
+
+      if (typeof onGridMapChange === "function") {
+        onGridMapChange(newGrid);
+      }
+
+      return newGrid;
     });
-    console.log(gridMap)
   };
 
+  // Estadísticas por tipo de estado
   const estadosContados = useMemo(() => {
     const counts = {
       [ESTADOS_CELDA.DISPONIBLE]: 0,
       [ESTADOS_CELDA.OCUPADO]: 0,
       [ESTADOS_CELDA.BLOQUEADO]: 0,
+      [ESTADOS_CELDA.CON_ESPACIO_SUPERIOR]: 0, // 👈 NUEVO CONTADOR
     };
     Object.values(gridMap).forEach((state) => {
       if (counts.hasOwnProperty(state)) {

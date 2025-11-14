@@ -1,4 +1,4 @@
-// cubicajeMobile-master/src/screens/Bodega/BodegaFormScreen.js
+// src/screens/Bodega/BodegaFormScreen.js
 import React, { useEffect, useState } from "react";
 import {
   View,
@@ -8,289 +8,261 @@ import {
   Alert,
   ScrollView,
   StyleSheet,
-  ActivityIndicator,
+  Switch,
 } from "react-native";
-import { useApp, vol } from "../../store"; // <- store global
-
-// Vista demo (solo visual – placeholder para 3D)
-function Tablero({ alto, ancho, largo }) {
-  return (
-    <View style={st.tableroBox}>
-      <Text style={st.tableroTitle}>Vista 3D (demo)</Text>
-      <Text style={st.tableroText}>
-        Alto: {alto || 0} m · Ancho: {ancho || 0} m · Largo: {largo || 0} m
-      </Text>
-      <Text style={st.tableroHint}>
-        Aquí podrías renderizar un modelo 3D real en el futuro.
-      </Text>
-    </View>
-  );
-}
+import { useApp } from "../../store";
+import Tablero from "../../components/Tablero/Tablero";
 
 export default function BodegaFormScreen(props) {
-  const { goToMenu, goToBodegasList, bodega, navigation } = props;
+  const { route, navigation } = props;
+  const { saveBodega } = useApp();
 
-  // 👈 traemos saveBodega y syncBodegasFromApi del store
-  const { saveBodega, syncBodegasFromApi } = useApp();
+  const editingBodega = route?.params?.bodega || null;
+  const isEdit = !!editingBodega;
 
-  const [form, setForm] = useState({
-    id: null,
-    nombre: "",
-    direccion: "",
-    ciudad: "Iquique",
-    ancho: "",
-    alto: "",
-    largo: "",
-    active: true,
-  });
-
+  const [nombre, setNombre] = useState(editingBodega?.nombre || "");
+  const [ciudad, setCiudad] = useState(editingBodega?.ciudad || "");
+  const [direccion, setDireccion] = useState(editingBodega?.direccion || "");
+  const [ancho, setAncho] = useState(
+    editingBodega?.ancho != null ? String(editingBodega.ancho) : ""
+  );
+  const [largo, setLargo] = useState(
+    editingBodega?.largo != null ? String(editingBodega.largo) : ""
+  );
+  const [alto, setAlto] = useState(
+    editingBodega?.alto != null ? String(editingBodega.alto) : ""
+  );
+  const [active, setActive] = useState(
+    editingBodega?.active !== undefined ? !!editingBodega.active : true
+  );
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (bodega) {
-      setForm({
-        id: bodega.id ?? null,
-        nombre: bodega.nombre || "",
-        direccion: bodega.direccion || "",
-        ciudad: bodega.ciudad || "Iquique",
-        ancho: String(bodega.ancho ?? ""),
-        alto: String(bodega.alto ?? ""),
-        largo: String(bodega.largo ?? ""),
-        active: bodega.active ?? true,
-      });
+    if (isEdit) {
+      navigation?.setOptions?.({ title: "Editar bodega" });
     } else {
-      setForm((f) => ({
-        ...f,
-        id: null,
-        nombre: "",
-        direccion: "",
-        ciudad: "Iquique",
-        ancho: "",
-        alto: "",
-        largo: "",
-        active: true,
-      }));
+      navigation?.setOptions?.({ title: "Nueva bodega" });
     }
-  }, [bodega]);
+  }, [isEdit, navigation]);
 
-  const set = (k, v) => setForm((prev) => ({ ...prev, [k]: v }));
-
-  const parseNum = (v) => {
-    const n = parseFloat(String(v || "").replace(",", "."));
-    return Number.isFinite(n) ? n : NaN;
+  const goBack = () => {
+    if (navigation?.goBack) navigation.goBack();
   };
 
-  const navegarALista = () => {
-    if (typeof goToBodegasList === "function") return goToBodegasList();
-    if (navigation?.goBack) return navigation.goBack();
-  };
-
-  const guardar = async () => {
-    if (!form.nombre.trim() || !form.direccion.trim()) {
-      return Alert.alert("Campos incompletos", "Completa nombre y dirección.");
+  const handleSave = async () => {
+    if (!nombre.trim()) {
+      return Alert.alert("Validación", "Debes ingresar un nombre de bodega.");
+    }
+    if (!ciudad.trim()) {
+      return Alert.alert("Validación", "Debes ingresar la ciudad.");
+    }
+    if (!direccion.trim()) {
+      return Alert.alert("Validación", "Debes ingresar la dirección.");
     }
 
-    const anchoN = parseNum(form.ancho);
-    const altoN = parseNum(form.alto);
-    const largoN = parseNum(form.largo);
+    const anchoNum = Number(ancho);
+    const largoNum = Number(largo);
+    const altoNum = Number(alto);
 
-    if (![anchoN, altoN, largoN].every((n) => Number.isFinite(n) && n > 0)) {
+    if (!anchoNum || anchoNum <= 0 || !largoNum || largoNum <= 0) {
       return Alert.alert(
-        "Dimensiones inválidas",
-        "Ingresa ancho, alto y largo (números > 0)."
+        "Validación",
+        'Los campos "Ancho" y "Largo" deben ser números mayores a 0.'
       );
     }
+    if (!altoNum || altoNum <= 0) {
+      return Alert.alert(
+        "Validación",
+        'El campo "Altura" debe ser un número mayor a 0.'
+      );
+    }
+
+    const bodegaPayload = {
+      id: editingBodega?.id || null,
+      nombre: nombre.trim(),
+      ciudad: ciudad.trim(),
+      direccion: direccion.trim(),
+      ancho: anchoNum,
+      largo: largoNum,
+      alto: altoNum,
+      active,
+    };
 
     try {
       setSaving(true);
-
-      // 1) Guardar en la BD (API msApiCubicaje)
-      await saveBodega({
-        id: form.id,
-        nombre: form.nombre.trim(),
-        direccion: form.direccion.trim(),
-        ciudad: form.ciudad.trim(),
-        ancho: anchoN,
-        alto: altoN,
-        largo: largoN,
-        active: !!form.active,
-      });
-
-      // 2) Volver a sincronizar desde la BD para asegurarnos
-      try {
-        await syncBodegasFromApi();
-      } catch (e) {
-        console.log("[BodegaForm] error al refrescar bodegas:", e);
-      }
-
+      await saveBodega(bodegaPayload);
       Alert.alert(
-        "Bodega guardada",
-        "La bodega se guardó correctamente.",
-        [{ text: "OK", onPress: navegarALista }]
+        "Éxito",
+        isEdit
+          ? "Bodega actualizada correctamente."
+          : "Bodega creada correctamente.",
+        [{ text: "OK", onPress: goBack }]
       );
     } catch (err) {
-      console.log("[BodegaForm] error guardar:", err);
+      console.log("[BodegaFormScreen] error save:", err);
       Alert.alert(
         "Error",
-        err?.message || "No se pudo guardar la bodega en el servidor."
+        err?.message || "No se pudo guardar la bodega. Intenta nuevamente."
       );
     } finally {
       setSaving(false);
     }
   };
 
-  const capacidad = vol(form.ancho, form.alto, form.largo);
+  // números que le pasamos al Tablero
+  const anchoTablero =
+    Number.isFinite(Number(ancho)) && Number(ancho) > 0 ? Number(ancho) : 0;
+  const largoTablero =
+    Number.isFinite(Number(largo)) && Number(largo) > 0 ? Number(largo) : 0;
 
   return (
     <View style={st.screen}>
-      {/* Header */}
-      <View style={st.headerRow}>
-        <View>
-          <Text style={st.title}>
-            {form.id ? "Editar bodega" : "Nueva bodega"}
-          </Text>
-          <Text style={st.subtitle}>
-            Define ubicación, dimensiones y estado.
-          </Text>
-        </View>
-      </View>
-
       <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={{ paddingBottom: 140 }}
-        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 120 }}
+        keyboardShouldPersistTaps="handled"
       >
+        <Text style={st.title}>
+          {isEdit ? "Editar bodega" : "Nueva bodega"}
+        </Text>
+        <Text style={st.subtitle}>
+          Completa los datos de la bodega y, si quieres, marca el mapa de
+          posiciones donde se pueden acomodar ítems.
+        </Text>
+
         {/* Nombre */}
-        <Text style={st.label}>Nombre</Text>
+        <Text style={st.label}>Nombre de la bodega</Text>
         <TextInput
           style={st.input}
-          value={form.nombre}
-          onChangeText={(v) => set("nombre", v)}
-          placeholder="Nombre de bodega"
+          value={nombre}
+          onChangeText={setNombre}
+          placeholder="Ej: Bodega Central"
         />
 
         {/* Ciudad */}
         <Text style={st.label}>Ciudad</Text>
-        <View style={st.row}>
-          {["Iquique", "Alto Hospicio"].map((c) => (
-            <TouchableOpacity
-              key={c}
-              style={[st.pill, form.ciudad === c && st.pillActive]}
-              onPress={() => set("ciudad", c)}
-            >
-              <Text
-                style={[st.pillText, form.ciudad === c && st.pillTextActive]}
+
+        {/* Botones para escoger ciudad */}
+        <View style={st.cityChipsRow}>
+          {["Iquique", "Alto Hospicio"].map((city) => {
+            const selected = ciudad === city;
+            return (
+              <TouchableOpacity
+                key={city}
+                style={[
+                  st.cityChip,
+                  selected && st.cityChipSelected,
+                ]}
+                onPress={() => setCiudad(city)}
               >
-                {c}
-              </Text>
-            </TouchableOpacity>
-          ))}
+                <Text
+                  style={[
+                    st.cityChipText,
+                    selected && st.cityChipTextSelected,
+                  ]}
+                >
+                  {city}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
+
+        {/* También puedes escribir otra ciudad si quieres */}
+        <TextInput
+          style={st.input}
+          value={ciudad}
+          onChangeText={setCiudad}
+          placeholder="Ej: Iquique / Alto Hospicio"
+        />
 
         {/* Dirección */}
         <Text style={st.label}>Dirección</Text>
         <TextInput
           style={st.input}
-          value={form.direccion}
-          onChangeText={(v) => set("direccion", v)}
-          placeholder="Dirección"
+          value={direccion}
+          onChangeText={setDireccion}
+          placeholder="Dirección completa"
         />
 
         {/* Dimensiones */}
-        <Text style={st.label}>Dimensiones (m)</Text>
         <View style={st.row}>
           <View style={st.col}>
-            <Text style={st.subLabel}>Ancho</Text>
+            <Text style={st.label}>Ancho (m)</Text>
             <TextInput
               style={st.input}
-              placeholder="0.0"
+              value={ancho}
+              onChangeText={setAncho}
               keyboardType="numeric"
-              value={String(form.ancho)}
-              onChangeText={(v) => set("ancho", v)}
+              placeholder="Ej: 10"
             />
           </View>
           <View style={st.col}>
-            <Text style={st.subLabel}>Altura</Text>
+            <Text style={st.label}>Largo (m)</Text>
             <TextInput
               style={st.input}
-              placeholder="0.0"
+              value={largo}
+              onChangeText={setLargo}
               keyboardType="numeric"
-              value={String(form.alto)}
-              onChangeText={(v) => set("alto", v)}
-            />
-          </View>
-          <View style={st.col}>
-            <Text style={st.subLabel}>Largo</Text>
-            <TextInput
-              style={st.input}
-              placeholder="0.0"
-              keyboardType="numeric"
-              value={String(form.largo)}
-              onChangeText={(v) => set("largo", v)}
+              placeholder="Ej: 20"
             />
           </View>
         </View>
 
-        {/* Capacidad calculada */}
-        <View style={st.calcBox}>
-          <Text style={st.calcTxt}>
-            Capacidad:{" "}
-            {Number.isFinite(capacidad) ? capacidad.toFixed(3) : "0.000"} m³
-          </Text>
-        </View>
-
-        {/* Estado */}
-        <Text style={st.label}>Estado</Text>
-        <View style={st.row}>
-          <TouchableOpacity
-            style={[st.pill, form.active && st.stateActive]}
-            onPress={() => set("active", true)}
-          >
-            <Text style={[st.pillText, form.active && st.stateTextOn]}>
-              Activa
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[st.pill, !form.active && st.stateInactive]}
-            onPress={() => set("active", false)}
-          >
-            <Text style={[st.pillText, !form.active && st.stateTextOn]}>
-              Inactiva
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Tablero demo */}
-        <Tablero
-          alto={parseNum(form.alto)}
-          ancho={parseNum(form.ancho)}
-          largo={parseNum(form.largo)}
+        <Text style={st.label}>Altura (m)</Text>
+        <TextInput
+          style={st.input}
+          value={alto}
+          onChangeText={setAlto}
+          keyboardType="numeric"
+          placeholder="Ej: 4"
         />
+
+        {/* Estado activa/inactiva */}
+        <View style={[st.row, { alignItems: "center", marginTop: 12 }]}>
+          <Text style={[st.label, { marginBottom: 0 }]}>Bodega activa</Text>
+          <Switch
+            value={active}
+            onValueChange={setActive}
+            style={{ marginLeft: 12 }}
+          />
+        </View>
+
+        {/* TABLERO (solo visual) */}
+        <View style={{ marginTop: 20 }}>
+          <Text style={st.label}>Mapa de posiciones (opcional)</Text>
+          <Text style={st.helpText}>
+            Marca las posiciones disponibles/bloqueadas. Esto por ahora es solo
+            visual; más adelante lo podemos guardar en la base de datos.
+          </Text>
+
+          <Tablero ancho={anchoTablero} largo={largoTablero} />
+        </View>
       </ScrollView>
 
-      {/* Bottom bar */}
+      {/* Bottom bar acciones */}
       <View style={st.bottomBar}>
-        <TouchableOpacity style={st.bottomBtn} onPress={goToMenu}>
-          <Text style={st.bottomBtnText}>Menú principal</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={st.bottomBtn} onPress={navegarALista}>
-          <Text style={st.bottomBtnText}>Bodegas</Text>
+        <TouchableOpacity
+          style={[st.bottomBtn, st.bottomBtnSecondary]}
+          onPress={goBack}
+          disabled={saving}
+        >
+          <Text style={[st.bottomBtnText, st.bottomBtnTextSecondary]}>
+            Cancelar
+          </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[st.bottomBtn, st.bottomBtnActive]}
-          onPress={guardar}
+          style={[st.bottomBtn, st.bottomBtnPrimary]}
+          onPress={handleSave}
           disabled={saving}
         >
-          {saving ? (
-            <ActivityIndicator color="#fff" size="small" />
-          ) : (
-            <Text style={[st.bottomBtnText, st.bottomBtnTextActive]}>
-              {form.id ? "Guardar cambios" : "Crear bodega"}
-            </Text>
-          )}
+          <Text style={st.bottomBtnText}>
+            {saving
+              ? "Guardando..."
+              : isEdit
+              ? "Guardar cambios"
+              : "Crear bodega"}
+          </Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -303,90 +275,100 @@ const st = StyleSheet.create({
     backgroundColor: "#f3f4f6",
     paddingHorizontal: 16,
     paddingTop: 18,
-    paddingBottom: 140,
   },
-  headerRow: { marginBottom: 8 },
-  title: { fontSize: 20, fontWeight: "700", color: "#111827" },
-  subtitle: { fontSize: 12, color: "#6b7280" },
-  label: {
-    color: "#475569",
-    marginTop: 10,
+  title: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#111827",
     marginBottom: 4,
+  },
+  subtitle: {
+    fontSize: 12,
+    color: "#6b7280",
+    marginBottom: 12,
+  },
+  label: {
     fontSize: 12,
     fontWeight: "600",
+    color: "#374151",
+    marginBottom: 4,
+    marginTop: 8,
   },
-  subLabel: { color: "#6b7280", fontSize: 11, marginBottom: 2 },
   input: {
     borderWidth: 1,
     borderColor: "#d4d4d8",
     borderRadius: 10,
     paddingHorizontal: 10,
     paddingVertical: 8,
-    backgroundColor: "#fff",
-    fontSize: 12,
+    backgroundColor: "#f9fafb",
+    fontSize: 13,
   },
-  row: { flexDirection: "row", gap: 8, marginTop: 4, flexWrap: "wrap" },
-  col: { flex: 1 },
-  pill: {
-    paddingVertical: 7,
-    paddingHorizontal: 12,
-    borderWidth: 1,
-    borderColor: "#d4d4d8",
-    borderRadius: 999,
-    backgroundColor: "#fff",
+  row: {
+    flexDirection: "row",
+    gap: 10,
   },
-  pillActive: { backgroundColor: "#2563eb", borderColor: "#2563eb" },
-  pillText: { fontSize: 11, fontWeight: "600", color: "#111827" },
-  pillTextActive: { color: "#ffffff" },
-  stateActive: { backgroundColor: "#22c55e", borderColor: "#22c55e" },
-  stateInactive: { backgroundColor: "#ef4444", borderColor: "#ef4444" },
-  stateTextOn: { color: "#ffffff" },
-  calcBox: {
-    padding: 10,
-    borderRadius: 10,
-    backgroundColor: "#f1f5f9",
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    marginVertical: 10,
+  col: {
+    flex: 1,
   },
-  calcTxt: { fontWeight: "700", color: "#0f172a" },
-  tableroBox: {
-    marginTop: 14,
-    padding: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#e5e7eb",
-    backgroundColor: "#fff",
+  helpText: {
+    fontSize: 11,
+    color: "#6b7280",
+    marginBottom: 8,
   },
-  tableroTitle: { fontSize: 12, fontWeight: "700", color: "#111827" },
-  tableroText: { fontSize: 11, color: "#4b5563", marginTop: 2 },
-  tableroHint: { fontSize: 9, color: "#9ca3af", marginTop: 2 },
   bottomBar: {
     position: "absolute",
     left: 16,
     right: 16,
-    bottom: 40,
-    padding: 6,
+    bottom: 30,
     flexDirection: "row",
-    backgroundColor: "#ffffff",
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: "#e5e7eb",
-    gap: 6,
-    elevation: 6,
-    shadowColor: "#000",
-    shadowOpacity: 0.16,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
+    gap: 8,
   },
   bottomBtn: {
     flex: 1,
-    paddingVertical: 7,
+    paddingVertical: 10,
     borderRadius: 999,
     alignItems: "center",
     justifyContent: "center",
   },
-  bottomBtnActive: { backgroundColor: "#2563eb" },
-  bottomBtnText: { fontSize: 10.5, color: "#6b7280", fontWeight: "500" },
-  bottomBtnTextActive: { color: "#ffffff", fontWeight: "600" },
+  bottomBtnPrimary: {
+    backgroundColor: "#2563eb",
+  },
+  bottomBtnSecondary: {
+    backgroundColor: "#e5e7eb",
+  },
+  bottomBtnText: {
+    fontSize: 13,
+    color: "#ffffff",
+    fontWeight: "600",
+  },
+  bottomBtnTextSecondary: {
+    color: "#111827",
+  },
+
+  // estilos para selección de ciudad
+  cityChipsRow: {
+    flexDirection: "row",
+    marginBottom: 8,
+  },
+  cityChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#d4d4d8",
+    backgroundColor: "#f9fafb",
+    marginRight: 8,
+  },
+  cityChipSelected: {
+    backgroundColor: "#2563eb",
+    borderColor: "#2563eb",
+  },
+  cityChipText: {
+    fontSize: 12,
+    color: "#374151",
+  },
+  cityChipTextSelected: {
+    color: "#ffffff",
+    fontWeight: "600",
+  },
 });

@@ -1,4 +1,4 @@
-// C:\Users\japf2\Desktop\Tesis Cubicaje\Proyecto\proyectoPrincipal\cubicajeMobile-master\src\features\bodega3d\Bodega3DScreen.js
+// src/features/bodega3d/Bodega3DScreen.js
 
 import React from "react";
 import { View, StyleSheet } from "react-native";
@@ -9,16 +9,22 @@ export default function Bodega3DScreen({ route }) {
   const { bodegas, items } = useApp();
 
   // Se espera que venga bodegaId en los params
-  const { bodegaId, nombre, ancho, alto, largo } = route.params || {};
+  const { bodegaId, nombre, ancho, alto, largo, layout: layoutParam } =
+    route.params || {};
 
   // Buscar la bodega en el store si tenemos id
-  const bodega =
-    bodegas.find((b) => b.id === bodegaId) || null;
+  const bodega = bodegas.find((b) => b.id === bodegaId) || null;
 
   const bw = Number(bodega?.ancho ?? ancho) || 10;
   const bh = Number(bodega?.alto ?? alto) || 5;
   const bl = Number(bodega?.largo ?? largo) || 10;
   const bName = bodega?.nombre || nombre || "Bodega";
+
+  // 👉 Layout de la bodega (mapeo D / B / O)
+  const layout = bodega?.layout || layoutParam || null;
+  const layoutAncho = Number(layout?.ancho ?? bw) || 0;
+  const layoutLargo = Number(layout?.largo ?? bl) || 0;
+  const layoutMapa = layout?.mapa_json || {};
 
   // Ítems dentro de esta bodega
   const itemsInBodega = items
@@ -36,10 +42,18 @@ export default function Bodega3DScreen({ route }) {
     }));
 
   // Serializamos a JSON seguro para incrustar en el HTML
-  const itemsJson = JSON.stringify(itemsInBodega).replace(
-    /</g,
-    "\\u003c"
-  );
+  const itemsJson = JSON.stringify(itemsInBodega).replace(/</g, "\\u003c");
+
+  // Pasamos también el layout al WebView
+  const layoutJson = JSON.stringify(
+    {
+      ancho: layoutAncho,
+      largo: layoutLargo,
+      mapa: layoutMapa, // objeto tipo { "0":"D", "1":"B", ... }
+    },
+    null,
+    0
+  ).replace(/</g, "\\u003c");
 
   const html = `
     <!DOCTYPE html>
@@ -89,7 +103,9 @@ export default function Bodega3DScreen({ route }) {
             var canvas = document.getElementById('c');
             var ctx = canvas.getContext('2d');
 
+            // Datos que vienen desde React Native
             var items = ${itemsJson};
+            var layoutData = ${layoutJson};
 
             function resize() {
               var dpr = window.devicePixelRatio || 1;
@@ -131,10 +147,6 @@ export default function Bodega3DScreen({ route }) {
             ];
 
             /* ------- Layout de ítems dentro de la bodega ------- */
-            // Muy sencillo: se colocan sobre el piso en filas/columnas,
-            // respetando sus dimensiones escaladas. Si no caben, se empieza
-            // a "apilar" en altura.
-
             function buildItemBoxes() {
               var boxes = [];
               if (!items || !items.length) return boxes;
@@ -331,7 +343,7 @@ export default function Bodega3DScreen({ route }) {
               for (var y = 0; y <= h; y += step) {
                 ctx.beginPath();
                 ctx.moveTo(0, y);
-                ctx.lineTo(w, y);
+                ctx.lineTo(w, h);
                 ctx.stroke();
               }
               ctx.restore();
@@ -376,6 +388,69 @@ export default function Bodega3DScreen({ route }) {
                 ctx.lineTo(b.x, b.y);
                 ctx.stroke();
               });
+            }
+
+            // 🟩🟥 DIBUJAR EL MAPE0 DEL PISO SEGÚN layoutData (D/B/O) + LETRAS
+            function drawFloorCells() {
+              if (!layoutData || !layoutData.ancho || !layoutData.largo) return;
+
+              var gW = layoutData.ancho;
+              var gL = layoutData.largo;
+              var mapa = layoutData.mapa || {};
+
+              // Cada celda ocupa un pedazo del ancho/largo total de la bodega
+              var cellWorldW = ((${bw} * scale) / gW);
+              var cellWorldL = ((${bl} * scale) / gL);
+
+              for (var index = 0; index < gW * gL; index++) {
+                var estado = mapa[index] ?? mapa[String(index)] ?? "D";
+
+                var gx = index % gW;
+                var gz = Math.floor(index / gW);
+
+                var centerX = -halfX + cellWorldW * (gx + 0.5);
+                var centerZ = -halfZ + cellWorldL * (gz + 0.5);
+                var y = -halfY; // piso
+
+                var hw = cellWorldW / 2;
+                var hl = cellWorldL / 2;
+
+                var color;
+                if (estado === "B") {
+                  color = "rgba(239,68,68,0.55)"; // rojo bloqueado
+                } else if (estado === "O") {
+                  color = "rgba(234,179,8,0.55)"; // amarillo ocupado
+                } else {
+                  color = "rgba(34,197,94,0.35)"; // verde disponible
+                }
+
+                var p0 = project({x:centerX - hw, y:y, z:centerZ - hl});
+                var p1 = project({x:centerX + hw, y:y, z:centerZ - hl});
+                var p2 = project({x:centerX + hw, y:y, z:centerZ + hl});
+                var p3 = project({x:centerX - hw, y:y, z:centerZ + hl});
+
+                ctx.beginPath();
+                ctx.moveTo(p0.x, p0.y);
+                ctx.lineTo(p1.x, p1.y);
+                ctx.lineTo(p2.x, p2.y);
+                ctx.lineTo(p3.x, p3.y);
+                ctx.closePath();
+
+                ctx.fillStyle = color;
+                ctx.fill();
+
+                ctx.strokeStyle = "rgba(15,23,42,0.9)";
+                ctx.lineWidth = 0.6;
+                ctx.stroke();
+
+                // 👉 LETRA EN EL CENTRO (D / B / O)
+                var centerProj = project({x: centerX, y: y + 0.01, z: centerZ});
+                ctx.fillStyle = "#e5e7eb";
+                ctx.font = "10px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText(estado, centerProj.x, centerProj.y);
+              }
             }
 
             function drawItems() {
@@ -433,6 +508,7 @@ export default function Bodega3DScreen({ route }) {
               drawGrid();
               drawAxes();
               drawBodega();
+              drawFloorCells(); // 👈 aquí se ve el MAPE0 (D/B/O) con letras
               drawItems();
 
               requestAnimationFrame(render);

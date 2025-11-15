@@ -10,7 +10,12 @@ import { loadState, saveState } from "./localStore";
 import { vol, clampInt, pesoAClase, SIZE_CLASSES } from "./helpers";
 
 // ⚠️ APIs de bodegas (msApiCubicaje)
-import { getBodegas, insertBodega, updateBodegaApi } from "../features/api";
+import {
+  getBodegas,
+  insertBodega,
+  updateBodegaApi,
+  getCategories, // 👈 NUEVO: API de categorías
+} from "../features/api";
 
 // --------- Usuarios demo ---------
 const adminUserDemo = {
@@ -40,6 +45,7 @@ const initialState = {
   requests: [],
   users: [adminUserDemo, empleadoDemo],
   currentUser: null, // empieza deslogueado
+  categorias: [], // 👈 NUEVO: listado de categorías desde la API
 };
 
 // Contexto
@@ -243,81 +249,79 @@ export function AppProvider({ children }) {
   };
 
   // Guardar/actualizar bodega llamando a la API
-// Guardar/actualizar bodega llamando a la API
-const saveBodega = async (bodega) => {
-  const isUpdate = !!bodega.id;
-  const userId = state.currentUser?.id ?? null;
+  const saveBodega = async (bodega) => {
+    const isUpdate = !!bodega.id;
+    const userId = state.currentUser?.id ?? null;
 
-  const payload = {
-    nombre: (bodega.nombre || "").trim(),
-    ciudad: (bodega.ciudad || "").trim(),
-    direccion: (bodega.direccion || "").trim(),
-    ancho: Number(bodega.ancho) || 0,
-    largo: Number(bodega.largo) || 0,
-    alto: Number(bodega.alto) || 0,
-    id_usuario: userId,
-    activo: bodega.active ? 1 : 0,
+    const payload = {
+      nombre: (bodega.nombre || "").trim(),
+      ciudad: (bodega.ciudad || "").trim(),
+      direccion: (bodega.direccion || "").trim(),
+      ancho: Number(bodega.ancho) || 0,
+      largo: Number(bodega.largo) || 0,
+      alto: Number(bodega.alto) || 0,
+      id_usuario: userId,
+      activo: bodega.active ? 1 : 0,
 
-    // 👇 ESTA ES LA CLAVE: mandamos el layout al backend
-    // { ancho, largo, mapa_json } que arma BodegaFormScreen
-    layout: bodega.layout || null,
-  };
+      // 👇 ESTA ES LA CLAVE: mandamos el layout al backend
+      // { ancho, largo, mapa_json } que arma BodegaFormScreen
+      layout: bodega.layout || null,
+    };
 
-  const normalize = (res) => {
-    if (!res) return { error: false, body: null, message: null };
-    const error = res.error ?? false;
-    const body = res.body ?? res.data ?? res;
-    const message = res.message ?? body?.message ?? body?.error ?? null;
-    return { error, body, message };
-  };
+    const normalize = (res) => {
+      if (!res) return { error: false, body: null, message: null };
+      const error = res.error ?? false;
+      const body = res.body ?? res.data ?? res;
+      const message = res.message ?? body?.message ?? body?.error ?? null;
+      return { error, body, message };
+    };
 
-  try {
-    if (isUpdate) {
-      // UPDATE
-      const res = await updateBodegaApi({
-        ...payload,
-        id_bodega: bodega.id,
-        id: bodega.id,
-      });
+    try {
+      if (isUpdate) {
+        // UPDATE
+        const res = await updateBodegaApi({
+          ...payload,
+          id_bodega: bodega.id,
+          id: bodega.id,
+        });
 
-      const { error, body, message } = normalize(res);
-      if (error) {
-        throw new Error(message || "Error actualizando bodega");
+        const { error, body, message } = normalize(res);
+        if (error) {
+          throw new Error(message || "Error actualizando bodega");
+        }
+
+        // Actualizar en el estado global
+        setState((prev) => ({
+          ...prev,
+          bodegas: prev.bodegas.map((b) =>
+            b.id === bodega.id ? { ...b, ...bodega } : b
+          ),
+        }));
+
+        return body;
+      } else {
+        // INSERT
+        const res = await insertBodega(payload);
+        const { error, body, message } = normalize(res);
+        if (error) {
+          throw new Error(message || "Error creando bodega");
+        }
+
+        const idFromDb = body?.id_bodega ?? body?.id ?? null;
+
+        setState((prev) => {
+          const id = idFromDb || nextId(prev.bodegas);
+          const nueva = { ...bodega, id };
+          return { ...prev, bodegas: [...prev.bodegas, nueva] };
+        });
+
+        return body;
       }
-
-      // Actualizar en el estado global
-      setState((prev) => ({
-        ...prev,
-        bodegas: prev.bodegas.map((b) =>
-          b.id === bodega.id ? { ...b, ...bodega } : b
-        ),
-      }));
-
-      return body;
-    } else {
-      // INSERT
-      const res = await insertBodega(payload);
-      const { error, body, message } = normalize(res);
-      if (error) {
-        throw new Error(message || "Error creando bodega");
-      }
-
-      const idFromDb = body?.id_bodega ?? body?.id ?? null;
-
-      setState((prev) => {
-        const id = idFromDb || nextId(prev.bodegas);
-        const nueva = { ...bodega, id };
-        return { ...prev, bodegas: [...prev.bodegas, nueva] };
-      });
-
-      return body;
+    } catch (err) {
+      console.log("[saveBodega] error:", err);
+      throw err;
     }
-  } catch (err) {
-    console.log("[saveBodega] error:", err);
-    throw err;
-  }
-};
-
+  };
 
   // Cambiar estado activo/inactivo EN BD + estado global
   const setBodegaActive = async (id, active) => {
@@ -343,6 +347,52 @@ const saveBodega = async (bodega) => {
     }
   };
 
+  // ========= CATEGORÍAS =========
+
+  const syncCategoriesFromApi = async () => {
+    try {
+      const res = await getCategories();
+      console.log("[syncCategoriesFromApi] res bruto:", res);
+
+      const error = res?.error ?? false;
+      const topBody = res?.body ?? res?.data ?? res;
+
+      if (error) {
+        throw new Error(topBody?.message || "Error obteniendo categorías");
+      }
+
+      let rows = [];
+
+      if (Array.isArray(res)) {
+        rows = res;
+      } else if (Array.isArray(res?.body?.body)) {
+        rows = res.body.body;
+      } else if (Array.isArray(res?.body)) {
+        rows = res.body;
+      } else if (Array.isArray(topBody?.body)) {
+        rows = topBody.body;
+      } else if (Array.isArray(topBody)) {
+        rows = topBody;
+      }
+
+      console.log("[syncCategoriesFromApi] rows detectadas:", rows.length);
+
+      const categoriasFromDb = rows.map((row) => ({
+        id: Number(row.id_categoria),
+        nombre: row.nombre,
+        descripcion: row.descripcion || "",
+        activo: row.activo === 1 || row.activo === true,
+      }));
+
+      setState((prev) => ({
+        ...prev,
+        categorias: categoriasFromDb,
+      }));
+    } catch (err) {
+      console.log("[syncCategoriesFromApi] error:", err);
+      throw err;
+    }
+  };
 
   // ========= ITEMS =========
 
@@ -499,7 +549,10 @@ const saveBodega = async (bodega) => {
       metricsOf,
       saveBodega,
       setBodegaActive,
-      syncBodegasFromApi, // 👈 aquí está expuesto
+      syncBodegasFromApi, // 👈 ya estaba expuesto
+
+      // categorías
+      syncCategoriesFromApi, // 👈 NUEVO (categorias viene en ...state)
 
       // items
       saveItem,

@@ -1,5 +1,5 @@
-// src/screens/Item/ItemFormScreen.js
-import React, { useEffect, useState } from "react";
+// cubicajeMobile-master/src/screens/Item/ItemFormScreen.js
+import React, { useEffect, useState, useMemo } from "react";
 import {
   View,
   Text,
@@ -12,18 +12,16 @@ import {
   FlatList,
 } from "react-native";
 import { useApp, vol, clampInt, pesoAClase } from "../../store";
+import { getCategories } from "../../features/api"; // 👈 leemos categorías DIRECTO de la API
 
-// ---------- Categorías y productos permitidos ----------
+// ---------- Categorías y productos permitidos (solo sugerencias de productos) ----------
 const PRODUCTOS_POR_CATEGORIA = {
   "Mallas Metálicas Inoxidables": [
     "Malla acero inoxidable 304",
     "Malla acero inoxidable 316",
     "Malla galvanizada",
   ],
-  "Telas Nylon": [
-    "Tela nylon monofilamento",
-    "Tela polyester monofilamento",
-  ],
+  "Telas Nylon": ["Tela nylon monofilamento", "Tela polyester monofilamento"],
   "Uniones para Empalmes Mecánicos": [
     "Unión de gancho",
     "Unión bisagra",
@@ -40,13 +38,17 @@ const PRODUCTOS_POR_CATEGORIA = {
   ],
 };
 
-const CATEGORY_LIST = Object.keys(PRODUCTOS_POR_CATEGORIA).map(
-  (nombre, index) => ({ id: index + 1, nombre })
-);
-
 export default function ItemFormScreen(props) {
   const { goToMenu, goToItemsList, item: propItem, navigation, route } = props;
-  const { bodegas, saveItem, metricsOf } = useApp();
+
+  const {
+    bodegas,
+    saveItem,
+    metricsOf,
+    // 👇 ya NO usamos categorias ni syncCategoriesFromApi del store
+    // categorias,
+    // syncCategoriesFromApi,
+  } = useApp();
 
   // item puede venir por props o por route.params
   const item = propItem || route?.params?.item || null;
@@ -68,6 +70,64 @@ export default function ItemFormScreen(props) {
   const [productModalVisible, setProductModalVisible] = useState(false);
   const [bodegaModalVisible, setBodegaModalVisible] = useState(false);
 
+  // 👇 NUEVO: categorías cargadas localmente desde la API
+  const [categoriasLocal, setCategoriasLocal] = useState([]);
+
+  // Cargar categorías directamente del backend al montar la pantalla
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await getCategories();
+        console.log("[ItemFormScreen] getCategories res:", res);
+
+        const error = res?.error ?? false;
+        const topBody = res?.body ?? res?.data ?? res;
+
+        if (error) {
+          throw new Error(topBody?.message || "Error obteniendo categorías");
+        }
+
+        let rows = [];
+        if (Array.isArray(res)) {
+          rows = res;
+        } else if (Array.isArray(res?.body?.body)) {
+          rows = res.body.body;
+        } else if (Array.isArray(res?.body)) {
+          rows = res.body;
+        } else if (Array.isArray(topBody?.body)) {
+          rows = topBody.body;
+        } else if (Array.isArray(topBody)) {
+          rows = topBody;
+        }
+
+        const categoriasFromDb = rows.map((row) => ({
+          id: Number(row.id_categoria),
+          nombre: row.nombre,
+          descripcion: row.descripcion || "",
+          activo: row.activo === 1 || row.activo === true,
+        }));
+
+        console.log(
+          "[ItemFormScreen] categoriasFromDb (local):",
+          categoriasFromDb
+        );
+
+        setCategoriasLocal(categoriasFromDb);
+      } catch (err) {
+        console.log("[ItemFormScreen] error cargando categorías:", err);
+        Alert.alert("Error", "No se pudieron cargar las categorías.");
+      }
+    })();
+  }, []); // solo al montar
+
+  // Lista de categorías construida SOLO desde la respuesta de la API
+  const CATEGORY_LIST = useMemo(
+    () => (categoriasLocal || []).filter((c) => c.activo),
+    [categoriasLocal]
+  );
+
+  console.log("[ItemFormScreen] CATEGORY_LIST para modal:", CATEGORY_LIST);
+
   // --- helpers de navegación (funcionan con props o navigation) ---
   const irMenu = () => {
     if (typeof goToMenu === "function") return goToMenu();
@@ -80,14 +140,17 @@ export default function ItemFormScreen(props) {
     if (navigation?.goBack) return navigation.goBack();
   };
 
+  // Inicializar form cuando venga un item (edición) o cambien las categorías
   useEffect(() => {
     if (item) {
+      const categoria = CATEGORY_LIST.find(
+        (c) => c.id === item.id_categoria
+      );
+
       setForm({
         id: item.id,
         categoriaId: item.id_categoria || null,
-        categoriaNombre:
-          CATEGORY_LIST.find((c) => c.id === item.id_categoria)?.nombre ||
-          "",
+        categoriaNombre: categoria?.nombre || "",
         productoNombre: item.nombre || "",
         ancho: String(item.ancho ?? ""),
         alto: String(item.alto ?? ""),
@@ -110,7 +173,7 @@ export default function ItemFormScreen(props) {
         bodegaId: null,
       });
     }
-  }, [item]);
+  }, [item, CATEGORY_LIST]);
 
   const cantidadInt = form.cantidad ? clampInt(form.cantidad, 1) : 0;
   const volUnit = vol(form.ancho, form.alto, form.largo);
@@ -124,7 +187,7 @@ export default function ItemFormScreen(props) {
     if (!CATEGORY_LIST.length)
       return Alert.alert(
         "Categorías",
-        "No hay categorías configuradas."
+        "No hay categorías configuradas o activas."
       );
     setCategoryModalVisible(true);
   };
@@ -132,7 +195,7 @@ export default function ItemFormScreen(props) {
   const selectCategory = (cat) => {
     setForm((prev) => ({
       ...prev,
-      categoriaId: cat.id,
+      categoriaId: cat.id, // id real de la BD
       categoriaNombre: cat.nombre,
       productoNombre: "",
     }));
@@ -142,10 +205,7 @@ export default function ItemFormScreen(props) {
 
   const openProductModal = () => {
     if (!form.categoriaNombre)
-      return Alert.alert(
-        "Producto",
-        "Primero selecciona una categoría."
-      );
+      return Alert.alert("Producto", "Primero selecciona una categoría.");
     if (!productosDeCategoria.length)
       return Alert.alert(
         "Producto",
@@ -173,24 +233,15 @@ export default function ItemFormScreen(props) {
   /* ---------- Guardar ---------- */
   const guardar = async () => {
     if (!form.categoriaId || !form.categoriaNombre)
-      return Alert.alert(
-        "Falta categoría",
-        "Selecciona una categoría."
-      );
+      return Alert.alert("Falta categoría", "Selecciona una categoría.");
     if (!form.productoNombre)
-      return Alert.alert(
-        "Falta producto",
-        "Selecciona un producto."
-      );
+      return Alert.alert("Falta producto", "Selecciona un producto.");
     if (!form.bodegaId)
       return Alert.alert("Falta bodega", "Selecciona una bodega.");
 
     const b = bodegas.find((x) => x.id === form.bodegaId);
     if (!b)
-      return Alert.alert(
-        "Bodega",
-        "La bodega seleccionada no existe."
-      );
+      return Alert.alert("Bodega", "La bodega seleccionada no existe.");
 
     const m = metricsOf(b);
     if (isFinite(volNecesario) && volNecesario > m.libre + 1e-9) {
@@ -225,14 +276,11 @@ export default function ItemFormScreen(props) {
   };
 
   const bodegaNombre =
-    form.bodegaId &&
-    bodegas.find((b) => b.id === form.bodegaId)?.nombre;
+    form.bodegaId && bodegas.find((b) => b.id === form.bodegaId)?.nombre;
   const bodegaOptionsText =
     bodegas && bodegas.length
       ? "IDs disponibles: " +
-        bodegas
-          .map((b) => `${b.id} (${b.nombre})`)
-          .join(", ")
+        bodegas.map((b) => `${b.id} (${b.nombre})`).join(", ")
       : "No hay bodegas definidas.";
 
   return (
@@ -270,8 +318,7 @@ export default function ItemFormScreen(props) {
                 !form.categoriaNombre && st.placeholderText,
               ]}
             >
-              {form.categoriaNombre ||
-                "Toca para elegir categoría"}
+              {form.categoriaNombre || "Toca para elegir categoría"}
             </Text>
           </TouchableOpacity>
 
@@ -417,10 +464,7 @@ export default function ItemFormScreen(props) {
 
       {/* Bottom bar: Lista / Guardar */}
       <View style={st.bottomBar}>
-        <TouchableOpacity
-          style={st.bottomBtn}
-          onPress={irItemsList}
-        >
+        <TouchableOpacity style={st.bottomBtn} onPress={irItemsList}>
           <Text style={st.bottomBtnText}>Lista de ítems</Text>
         </TouchableOpacity>
 
@@ -463,11 +507,7 @@ export default function ItemFormScreen(props) {
               )}
             />
             <TouchableOpacity
-              style={[
-                st.btn,
-                st.btnPrimary,
-                { marginTop: 8 },
-              ]}
+              style={[st.btn, st.btnPrimary, { marginTop: 8 }]}
               onPress={() => setCategoryModalVisible(false)}
             >
               <Text style={st.btnTxt}>Cerrar</Text>
@@ -500,11 +540,7 @@ export default function ItemFormScreen(props) {
               )}
             />
             <TouchableOpacity
-              style={[
-                st.btn,
-                st.btnPrimary,
-                { marginTop: 8 },
-              ]}
+              style={[st.btn, st.btnPrimary, { marginTop: 8 }]}
               onPress={() => setProductModalVisible(false)}
             >
               <Text style={st.btnTxt}>Cerrar</Text>
@@ -534,9 +570,7 @@ export default function ItemFormScreen(props) {
                     style={st.destItem}
                     onPress={() => selectBodega(b)}
                   >
-                    <Text style={st.destItemText}>
-                      {b.nombre}
-                    </Text>
+                    <Text style={st.destItemText}>{b.nombre}</Text>
                     <Text
                       style={{
                         fontSize: 10,
@@ -550,11 +584,7 @@ export default function ItemFormScreen(props) {
               }}
             />
             <TouchableOpacity
-              style={[
-                st.btn,
-                st.btnPrimary,
-                { marginTop: 8 },
-              ]}
+              style={[st.btn, st.btnPrimary, { marginTop: 8 }]}
               onPress={() => setBodegaModalVisible(false)}
             >
               <Text style={st.btnTxt}>Cerrar</Text>
@@ -572,7 +602,7 @@ const st = StyleSheet.create({
     backgroundColor: "#f3f4f6",
     paddingHorizontal: 16,
     paddingTop: 18,
-    paddingBottom: 140, // ⬅️ reserva de espacio
+    paddingBottom: 140,
   },
   headerRow: {
     flexDirection: "row",
@@ -694,7 +724,7 @@ const st = StyleSheet.create({
     position: "absolute",
     left: 16,
     right: 16,
-    bottom: 40, // ⬆️ más alto
+    bottom: 40,
     padding: 6,
     flexDirection: "row",
     backgroundColor: "#ffffff",

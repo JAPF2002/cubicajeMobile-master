@@ -1,4 +1,4 @@
-// cubicajeMobile-master/src/store/index.js
+// src/store/index.js
 import React, {
   createContext,
   useContext,
@@ -6,15 +6,23 @@ import React, {
   useMemo,
   useState,
 } from "react";
+import { Alert } from "react-native";
+
 import { loadState, saveState } from "./localStore";
 import { vol, clampInt, pesoAClase, SIZE_CLASSES } from "./helpers";
 
-// ⚠️ APIs de bodegas (msApiCubicaje)
+// APIs (msApiCubicaje)
 import {
   getBodegas,
   insertBodega,
   updateBodegaApi,
-  getCategories, // 👈 NUEVO: API de categorías
+  deleteBodegaApi,
+  getItems,
+  insertItem,
+  updateItem,
+  deleteItemApi,
+  getCategories,
+  moveItemQty,
 } from "../features/api";
 
 // --------- Usuarios demo ---------
@@ -24,7 +32,6 @@ const adminUserDemo = {
   correo: "admin@demo.cl",
   password: "admin123",
   role: "admin",
-  rol: "admin",
   active: true,
 };
 
@@ -34,221 +41,156 @@ const empleadoDemo = {
   correo: "empleado@demo.cl",
   password: "empleado123",
   role: "empleado",
-  rol: "empleado",
   active: true,
 };
 
-// --------- Estado inicial ---------
 const initialState = {
   bodegas: [],
   items: [],
   requests: [],
   users: [adminUserDemo, empleadoDemo],
-  currentUser: null, // empieza deslogueado
-  categorias: [], // 👈 NUEVO: listado de categorías desde la API
+  currentUser: null,
+  categorias: [],
 };
 
-// Contexto
+// ---------- Contexto ----------
 const AppContext = createContext(null);
 
-// ========= PROVIDER =========
+function nextId(list) {
+  if (!Array.isArray(list) || list.length === 0) return 1;
+  const maxId = list.reduce((max, it) => {
+    const id = typeof it.id === "number" ? it.id : parseInt(it.id || "0", 10);
+    return Number.isFinite(id) && id > max ? id : max;
+  }, 0);
+  return maxId + 1;
+}
+
 export function AppProvider({ children }) {
   const [state, setState] = useState(initialState);
   const [hydrated, setHydrated] = useState(false);
 
-  // Cargar desde AsyncStorage
+  // Carga inicial desde AsyncStorage
   useEffect(() => {
     (async () => {
       try {
-        const saved = await loadState();
-        if (saved && typeof saved === "object") {
+        const stored = await loadState();
+        if (stored && typeof stored === "object") {
+          // Merge suave: respetamos estructura actual
           setState((prev) => ({
             ...prev,
-            ...saved,
+            ...stored,
           }));
         }
-      } catch (e) {
-        console.warn("[AppProvider] error loadState", e);
+      } catch (err) {
+        console.log("[store] loadState error:", err);
       } finally {
         setHydrated(true);
       }
     })();
   }, []);
 
-  // Guardar cuando cambie
+  // Persistencia automática
   useEffect(() => {
     if (!hydrated) return;
-    saveState(state).catch((e) =>
-      console.warn("[AppProvider] error saveState", e)
-    );
+    (async () => {
+      try {
+        await saveState(state);
+      } catch (err) {
+        console.log("[store] saveState error:", err);
+      }
+    })();
   }, [state, hydrated]);
 
-  // ========= AUTH / USUARIO ACTUAL =========
+  // ---------- Derivados ----------
 
-  const loginAsDemo = (type) => {
-    const user =
-      type === "empleado" || type === "employee" ? empleadoDemo : adminUserDemo;
-
-    setState((prev) => {
-      const exists = prev.users.some((u) => u.id === user.id);
-      const users = exists ? prev.users : [...prev.users, user];
-
-      return {
-        ...prev,
-        users,
-        currentUser: user,
-      };
-    });
-  };
-
-  const loginWithCredentials = (correo, password) => {
-    const email = (correo || "").trim().toLowerCase();
-    const pwd = (password || "").trim();
-
-    if (!email || !pwd) {
-      return { ok: false, error: "Debes ingresar correo y contraseña." };
+  // Items agrupados por bodegaId
+  const itemsByBodega = useMemo(() => {
+    const m = new Map();
+    for (const it of state.items) {
+      const key = it.bodegaId || "__ORPHAN__";
+      const arr = m.get(key) || [];
+      arr.push(it);
+      m.set(key, arr);
     }
-
-    const user = state.users.find(
-      (u) =>
-        (u.correo || "").toLowerCase() === email &&
-        (u.password || "") === pwd &&
-        u.active !== false
-    );
-
-    if (!user) {
-      return { ok: false, error: "Correo o contraseña incorrectos." };
-    }
-
-    setState((prev) => ({
-      ...prev,
-      currentUser: user,
-    }));
-
-    return { ok: true, user };
-  };
-
-  const logout = () => {
-    setState((prev) => ({
-      ...prev,
-      currentUser: null,
-    }));
-  };
-
-  const updateCurrentUser = ({ nombre, correo, password }) => {
-    setState((prev) => {
-      if (!prev.currentUser) return prev;
-      const updated = {
-        ...prev.currentUser,
-        nombre: nombre ?? prev.currentUser.nombre,
-        correo: correo ?? prev.currentUser.correo,
-      };
-      if (password) {
-        updated.password = password;
-      }
-
-      const users = prev.users.map((u) =>
-        u.id === updated.id ? { ...u, ...updated } : u
-      );
-      return {
-        ...prev,
-        currentUser: updated,
-        users,
-      };
-    });
-  };
-
-  // ========= HELPERS GENERALES =========
-
-  const nextId = (list) =>
-    list.length ? Math.max(...list.map((x) => Number(x.id) || 0)) + 1 : 1;
-
-  // ========= BODEGAS =========
+    return m;
+  }, [state.items]);
 
   const metricsOf = (bodega) => {
     if (!bodega) {
-      return { capacidad: 0, ocupado: 0, libre: 0 };
+      return {
+        capacidad: 0,
+        ocupado: 0,
+        libre: 0,
+        count: 0,
+        unidades: 0,
+      };
     }
-    const capacidad = vol(bodega.ancho, bodega.alto, bodega.largo);
-
-    const itemsDeBodega = state.items.filter(
-      (it) => it.bodegaId === bodega.id
+    const capacidad = vol(bodega.ancho, bodega.alto, bodega.largo) || 0;
+    const arr = itemsByBodega.get(bodega.id) || [];
+    const ocupado = arr.reduce((acc, it) => {
+      const v =
+        vol(it.ancho, it.alto, it.largo) * clampInt(it.cantidad || 0, 1);
+      return acc + (Number.isFinite(v) ? v : 0);
+    }, 0);
+    const unidades = arr.reduce(
+      (acc, it) => acc + clampInt(it.cantidad || 0, 1),
+      0
     );
-
-    let ocupado = 0;
-    for (const it of itemsDeBodega) {
-      const vUnit = vol(it.ancho, it.alto, it.largo);
-      const cant = clampInt(it.cantidad, 1);
-      if (Number.isFinite(vUnit) && cant > 0) {
-        ocupado += vUnit * cant;
-      }
-    }
-
     const libre = Math.max(capacidad - ocupado, 0);
-    return { capacidad, ocupado, libre };
+
+    return {
+      capacidad,
+      ocupado,
+      libre,
+      count: arr.length,
+      unidades,
+    };
   };
 
-  // Cargar bodegas desde la API y guardarlas en el estado global
+  // ---------- BODEGAS ----------
+
+  const normalizeBodegaRow = (row) => ({
+    id: Number(row.id_bodega ?? row.id ?? 0),
+    nombre: row.nombre ?? "",
+    ciudad: row.ciudad ?? "",
+    direccion: row.direccion ?? "",
+    ancho: Number(row.ancho ?? 0),
+    largo: Number(row.largo ?? 0),
+    alto: Number(row.alto ?? 0),
+    active: row.activo === 1 || row.activo === true,
+    layout: row.layout || row.bodega_layout || null,
+  });
+
   const syncBodegasFromApi = async () => {
     try {
       const res = await getBodegas();
+      const raw = Array.isArray(res?.body)
+        ? res.body
+        : Array.isArray(res)
+        ? res
+        : Array.isArray(res?.data)
+        ? res.data
+        : [];
 
-      // 👀 Log para ver qué llega realmente del helper
-      console.log("[syncBodegasFromApi] res bruto:", res);
-
-      const error = res?.error ?? false;
-      const topBody = res?.body ?? res?.data ?? res;
-
-      if (error) {
-        throw new Error(topBody?.message || "Error obteniendo bodegas");
+      if (!Array.isArray(raw)) {
+        throw new Error("Formato inesperado en /api/bodegas");
       }
 
-      // Intentar encontrar el array de bodegas
-      let rows = [];
-
-      if (Array.isArray(res)) {
-        rows = res;
-      } else if (Array.isArray(res?.body?.body)) {
-        rows = res.body.body;
-      } else if (Array.isArray(res?.body)) {
-        rows = res.body;
-      } else if (Array.isArray(topBody?.body)) {
-        rows = topBody.body;
-      } else if (Array.isArray(topBody)) {
-        rows = topBody;
-      }
-
-      console.log("[syncBodegasFromApi] rows detectadas:", rows.length);
-
-      const bodegasFromDb = rows.map((row) => ({
-        id: Number(row.id_bodega),
-        nombre: row.nombre,
-        ciudad: row.ciudad || "",
-        direccion: row.direccion || "",
-        ancho: Number(row.ancho || 0),
-        alto: Number(row.alto || 0),
-        largo: Number(row.largo || 0),
-        // viene como is_active desde el SELECT:
-        // activo AS is_active
-        active: row.is_active === 1 || row.is_active === true,
-      }));
-
-      console.log(
-        "[syncBodegasFromApi] bodegas mapeadas:",
-        bodegasFromDb.length
-      );
+      const bodegas = raw.map(normalizeBodegaRow);
 
       setState((prev) => ({
         ...prev,
-        bodegas: bodegasFromDb,
+        bodegas,
       }));
     } catch (err) {
       console.log("[syncBodegasFromApi] error:", err);
-      throw err;
+      Alert.alert(
+        "Error",
+        err?.message || "No se pudieron cargar las bodegas."
+      );
     }
   };
 
-  // Guardar/actualizar bodega llamando a la API
   const saveBodega = async (bodega) => {
     const isUpdate = !!bodega.id;
     const userId = state.currentUser?.id ?? null;
@@ -262,13 +204,10 @@ export function AppProvider({ children }) {
       alto: Number(bodega.alto) || 0,
       id_usuario: userId,
       activo: bodega.active ? 1 : 0,
-
-      // 👇 ESTA ES LA CLAVE: mandamos el layout al backend
-      // { ancho, largo, mapa_json } que arma BodegaFormScreen
       layout: bodega.layout || null,
     };
 
-    const normalize = (res) => {
+    const normalizeRes = (res) => {
       if (!res) return { error: false, body: null, message: null };
       const error = res.error ?? false;
       const body = res.body ?? res.data ?? res;
@@ -278,19 +217,14 @@ export function AppProvider({ children }) {
 
     try {
       if (isUpdate) {
-        // UPDATE
         const res = await updateBodegaApi({
           ...payload,
           id_bodega: bodega.id,
           id: bodega.id,
         });
+        const { error, body, message } = normalizeRes(res);
+        if (error) throw new Error(message || "Error actualizando bodega");
 
-        const { error, body, message } = normalize(res);
-        if (error) {
-          throw new Error(message || "Error actualizando bodega");
-        }
-
-        // Actualizar en el estado global
         setState((prev) => ({
           ...prev,
           bodegas: prev.bodegas.map((b) =>
@@ -300,12 +234,9 @@ export function AppProvider({ children }) {
 
         return body;
       } else {
-        // INSERT
         const res = await insertBodega(payload);
-        const { error, body, message } = normalize(res);
-        if (error) {
-          throw new Error(message || "Error creando bodega");
-        }
+        const { error, body, message } = normalizeRes(res);
+        if (error) throw new Error(message || "Error creando bodega");
 
         const idFromDb = body?.id_bodega ?? body?.id ?? null;
 
@@ -319,63 +250,56 @@ export function AppProvider({ children }) {
       }
     } catch (err) {
       console.log("[saveBodega] error:", err);
+      Alert.alert(
+        "Error",
+        err?.message || "No se pudo guardar la bodega. Revisa la conexión."
+      );
       throw err;
     }
   };
 
-  // Cambiar estado activo/inactivo EN BD + estado global
   const setBodegaActive = async (id, active) => {
-    try {
-      // 1) actualizar en la BD
-      await updateBodegaApi({
-        id_bodega: id,
-        id: id,
-        activo: active ? 1 : 0,
-      });
+    const bodega = state.bodegas.find((b) => b.id === id);
+    if (!bodega) return;
 
-      // 2) actualizar en el estado global
+    try {
+      await saveBodega({ ...bodega, active });
+    } catch (err) {
+      // saveBodega ya muestra el Alert
+    }
+  };
+
+  const deleteBodega = async (id, mode = "") => {
+    try {
+      await deleteBodegaApi({ id_bodega: id, mode });
+
       setState((prev) => ({
         ...prev,
-        bodegas: prev.bodegas.map((b) =>
-          b.id === id ? { ...b, active } : b
-        ),
+        bodegas: prev.bodegas.filter((b) => b.id !== id),
+        items: prev.items.filter((it) => it.bodegaId !== id),
       }));
     } catch (err) {
-      console.log("[setBodegaActive] error:", err);
-      // dejamos que el que llama pueda mostrar un Alert
-      throw err;
+      console.log("[deleteBodega] error:", err);
+      Alert.alert(
+        "Error",
+        err?.message || "No se pudo eliminar la bodega."
+      );
     }
   };
 
-  // ========= CATEGORÍAS =========
+  // ---------- CATEGORÍAS ----------
 
   const syncCategoriesFromApi = async () => {
     try {
       const res = await getCategories();
-      console.log("[syncCategoriesFromApi] res bruto:", res);
-
-      const error = res?.error ?? false;
       const topBody = res?.body ?? res?.data ?? res;
 
-      if (error) {
-        throw new Error(topBody?.message || "Error obteniendo categorías");
-      }
-
       let rows = [];
-
-      if (Array.isArray(res)) {
-        rows = res;
-      } else if (Array.isArray(res?.body?.body)) {
-        rows = res.body.body;
-      } else if (Array.isArray(res?.body)) {
-        rows = res.body;
-      } else if (Array.isArray(topBody?.body)) {
-        rows = topBody.body;
-      } else if (Array.isArray(topBody)) {
-        rows = topBody;
-      }
-
-      console.log("[syncCategoriesFromApi] rows detectadas:", rows.length);
+      if (Array.isArray(res)) rows = res;
+      else if (Array.isArray(res?.body?.body)) rows = res.body.body;
+      else if (Array.isArray(res?.body)) rows = res.body;
+      else if (Array.isArray(topBody?.body)) rows = topBody.body;
+      else if (Array.isArray(topBody)) rows = topBody;
 
       const categoriasFromDb = rows.map((row) => ({
         id: Number(row.id_categoria),
@@ -390,183 +314,218 @@ export function AppProvider({ children }) {
       }));
     } catch (err) {
       console.log("[syncCategoriesFromApi] error:", err);
-      throw err;
+      Alert.alert(
+        "Error",
+        err?.message || "No se pudieron cargar las categorías."
+      );
     }
   };
 
-  // ========= ITEMS =========
+  // ---------- ITEMS ----------
 
-  const saveItem = async (item) => {
-    setState((prev) => {
-      if (item.id) {
-        const items = prev.items.map((it) =>
-          it.id === item.id ? { ...it, ...item } : it
-        );
-        return { ...prev, items };
+  const reloadItems = async () => {
+    const res = await getItems();
+    const lista = Array.isArray(res?.body)
+      ? res.body
+      : Array.isArray(res)
+      ? res
+      : [];
+
+    if (!Array.isArray(lista)) {
+      throw new Error("Formato inesperado en /api/items");
+    }
+
+    const normalizadas = lista.map((it) => ({
+      id: it.id ?? it.id_item,
+      nombre: it.nombre,
+      ancho: Number(it.ancho ?? 0),
+      alto: Number(it.alto ?? 0),
+      largo: Number(it.largo ?? 0),
+      peso: Number(it.peso ?? 0),
+      cantidad: clampInt(it.cantidad ?? 0, 1),
+      bodegaId:
+        it.bodegaId ??
+        it.id_bodega ??
+        it.bodega_id ??
+        null,
+      id_categoria: it.id_categoria ?? it.categoriaId ?? null,
+      clase: it.clase || pesoAClase(it.peso),
+    }));
+
+    setState((prev) => ({
+      ...prev,
+      items: normalizadas,
+    }));
+  };
+
+  const saveItem = async (payload) => {
+    try {
+      const creating = !payload.id;
+
+      const body = {
+        id_item: payload.id,
+        nombre: payload.nombre,
+        id_categoria:
+          payload.id_categoria ?? payload.categoriaId ?? null,
+        id_bodega:
+          payload.bodegaId ?? payload.id_bodega ?? null,
+        ancho: Number(payload.ancho ?? 0),
+        largo: Number(payload.largo ?? 0),
+        alto: Number(payload.alto ?? 0),
+        peso: Number(payload.peso ?? 0),
+        cantidad: clampInt(payload.cantidad || 1, 1),
+      };
+
+      if (creating) {
+        await insertItem(body);
+      } else {
+        await updateItem(body);
       }
-      const id = nextId(prev.items);
-      const nuevo = { ...item, id };
-      return { ...prev, items: [...prev.items, nuevo] };
-    });
+
+      await reloadItems();
+      Alert.alert(
+        "Ítem",
+        creating ? "Creado correctamente." : "Actualizado correctamente."
+      );
+    } catch (error) {
+      console.log("[saveItem] ERROR:", error?.message);
+      Alert.alert(
+        "Error",
+        `No se pudo guardar el ítem.\n${
+          error?.message || "Revisa la conexión."
+        }`
+      );
+    }
   };
 
   const deleteItem = async (id) => {
-    setState((prev) => ({
-      ...prev,
-      items: prev.items.filter((it) => it.id !== id),
-    }));
+    try {
+      await deleteItemApi(id);
+      await reloadItems();
+      Alert.alert("Ítem", "Eliminado correctamente.");
+    } catch (error) {
+      console.log("[deleteItem] ERROR:", error?.message);
+      Alert.alert(
+        "Error",
+        `No se pudo eliminar el ítem.\n${
+          error?.message || "Revisa la conexión."
+        }`
+      );
+    }
   };
 
   const moveItemPartial = async ({ id, fromBodegaId, toBodegaId, cantidad }) => {
-    setState((prev) => {
-      const items = [...prev.items];
-      const idx = items.findIndex((it) => it.id === id);
-      if (idx === -1) return prev;
-
-      const item = items[idx];
-      const total = clampInt(item.cantidad, 1);
-      const cant = clampInt(cantidad, 1);
-      if (!cant || cant > total) return prev;
-
-      const restante = total - cant;
-      items[idx] = { ...item, cantidad: restante, bodegaId: fromBodegaId };
-
-      if (restante <= 0) {
-        items.splice(idx, 1);
-      }
-
-      const destinoIdx = items.findIndex(
-        (it) =>
-          it.bodegaId === toBodegaId &&
-          it.nombre === item.nombre &&
-          it.ancho === item.ancho &&
-          it.alto === item.alto &&
-          it.largo === item.largo &&
-          it.peso === item.peso
+    try {
+      await moveItemQty(id, {
+        fromBodegaId,
+        toBodegaId,
+        cantidad,
+      });
+      await reloadItems();
+    } catch (error) {
+      console.log("[moveItemPartial] ERROR:", error?.message);
+      Alert.alert(
+        "Error",
+        `No se pudo mover el ítem.\n${
+          error?.message || "Revisa la conexión."
+        }`
       );
-
-      if (destinoIdx !== -1) {
-        const dest = items[destinoIdx];
-        items[destinoIdx] = {
-          ...dest,
-          cantidad: clampInt(dest.cantidad, 1) + cant,
-        };
-      } else {
-        items.push({
-          ...item,
-          id: nextId(items),
-          bodegaId: toBodegaId,
-          cantidad: cant,
-        });
-      }
-
-      return { ...prev, items };
-    });
+    }
   };
 
-  // ========= SOLICITUDES =========
-
-  const createBodegaRequest = (req) => {
-    setState((prev) => {
-      const id = nextId(prev.requests);
-      const nueva = {
-        id,
-        status: "pendiente",
-        ...req,
-      };
-      return { ...prev, requests: [nueva, ...prev.requests] };
-    });
-  };
-
-  const setRequestStatus = (id, status) => {
-    setState((prev) => ({
-      ...prev,
-      requests: prev.requests.map((r) =>
-        r.id === id ? { ...r, status } : r
-      ),
-    }));
-  };
-
-  // ========= USUARIOS =========
+  // ---------- USUARIOS / AUTH ----------
 
   const saveUser = (user) => {
     setState((prev) => {
-      if (user.id) {
-        const users = prev.users.map((u) =>
-          u.id === user.id ? { ...u, ...user } : u
-        );
-        const currentUser =
-          prev.currentUser && prev.currentUser.id === user.id
-            ? { ...prev.currentUser, ...user }
-            : prev.currentUser;
-
-        return { ...prev, users, currentUser };
+      const exists = prev.users.find((u) => u.id === user.id);
+      if (exists) {
+        return {
+          ...prev,
+          users: prev.users.map((u) =>
+            u.id === user.id ? { ...u, ...user } : u
+          ),
+        };
       }
-      const id = nextId(prev.users);
-      const nuevo = { ...user, id };
-      return { ...prev, users: [...prev.users, nuevo] };
+      const id = user.id || nextId(prev.users);
+      return {
+        ...prev,
+        users: [...prev.users, { ...user, id, active: true }],
+      };
     });
   };
 
-  const setUserActive = (id, active) => {
+  const loginAsDemo = (type) => {
+    const user = type === "admin" ? adminUserDemo : empleadoDemo;
     setState((prev) => ({
       ...prev,
-      users: prev.users.map((u) =>
-        u.id === id ? { ...u, active } : u
-      ),
+      currentUser: user,
     }));
   };
 
-  const deleteUser = (id) => {
+  const loginWithCredentials = (correo, password) => {
+    const user = state.users.find(
+      (u) =>
+        u.correo?.toLowerCase() === correo.toLowerCase() &&
+        u.password === password &&
+        u.active !== false
+    );
+
+    if (!user) {
+      return {
+        ok: false,
+        error: "Correo o contraseña inválidos.",
+      };
+    }
+
     setState((prev) => ({
       ...prev,
-      users: prev.users.filter((u) => u.id !== id),
-      currentUser:
-        prev.currentUser && prev.currentUser.id === id
-          ? null
-          : prev.currentUser,
+      currentUser: user,
+    }));
+
+    return { ok: true };
+  };
+
+  const logout = () => {
+    setState((prev) => ({
+      ...prev,
+      currentUser: null,
     }));
   };
 
-  // --------- VALUE DEL CONTEXTO ---------
+  // ---------- Valor de contexto ----------
+
   const value = useMemo(
     () => ({
-      ...state,
+      // Estado
+      bodegas: state.bodegas,
+      items: state.items,
+      requests: state.requests,
+      users: state.users,
+      currentUser: state.currentUser,
+      categorias: state.categorias,
 
-      // helpers
-      vol,
-      clampInt,
-      pesoAClase,
-      SIZE_CLASSES,
-
-      // auth
-      loginAsDemo,
-      loginWithCredentials,
-      logout,
-      updateCurrentUser,
-
-      // bodegas
+      // Derivados
       metricsOf,
+
+      // Bodegas
       saveBodega,
+      deleteBodega,
       setBodegaActive,
-      syncBodegasFromApi, // 👈 ya estaba expuesto
+      syncBodegasFromApi,
 
-      // categorías
-      syncCategoriesFromApi, // 👈 NUEVO (categorias viene en ...state)
+      // Categorías
+      syncCategoriesFromApi,
 
-      // items
+      // Items
       saveItem,
       deleteItem,
       moveItemPartial,
 
-      // solicitudes
-      createBodegaRequest,
-      setRequestStatus,
-
-      // usuarios
+      // Usuarios / auth
       saveUser,
-      setUserActive,
-      deleteUser,
+      loginAsDemo,
+      loginWithCredentials,
+      logout,
     }),
     [state]
   );

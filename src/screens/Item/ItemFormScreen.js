@@ -1,18 +1,18 @@
 // cubicajeMobile-master/src/screens/Item/ItemFormScreen.js
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
-  TextInput,
-  TouchableOpacity,
-  ScrollView,
-  Alert,
   StyleSheet,
+  TouchableOpacity,
+  TextInput,
+  Alert,
+  ScrollView,
   Modal,
   FlatList,
 } from "react-native";
-import { useApp, vol, clampInt, pesoAClase } from "../../store";
-import { getCategories } from "../../features/api"; // 👈 leemos categorías DIRECTO de la API
+import { useApp, vol, clampInt } from "../../store";
+import { getCategories } from "../../features/api";
 
 // ---------- Categorías y productos permitidos (solo sugerencias de productos) ----------
 const PRODUCTOS_POR_CATEGORIA = {
@@ -22,55 +22,37 @@ const PRODUCTOS_POR_CATEGORIA = {
     "Malla galvanizada",
   ],
   "Telas Nylon": ["Tela nylon monofilamento", "Tela polyester monofilamento"],
-  "Uniones para Empalmes Mecánicos": [
-    "Unión de gancho",
-    "Unión bisagra",
-    "Unión de placa apernada",
-  ],
-  "Planchas de Acero Perforadas": [
-    "Plancha perforada A-37",
-    "Plancha perforada inoxidable 304",
-  ],
-  "Mangueras de Caucho y PVC": [
-    "Manguera PVC reforzada",
-    "Manguera Cristalflex",
-    "Manguera Enoflex",
-  ],
+  "Uniones para Empalmes Mecánicos": ["Unión de gancho", "Unión bisagra"],
+  "Polietileno y PVC": ["Malla plástica", "Malla PVC reforzada"],
+  "Otros": ["Producto genérico"],
 };
 
 export default function ItemFormScreen(props) {
   const { goToMenu, goToItemsList, item: propItem, navigation, route } = props;
 
-  const {
-    bodegas,
-    saveItem,
-    metricsOf,
-    // 👇 ya NO usamos categorias ni syncCategoriesFromApi del store
-    // categorias,
-    // syncCategoriesFromApi,
-  } = useApp();
+  const { bodegas, saveItem, metricsOf } = useApp();
 
   // item puede venir por props o por route.params
   const item = propItem || route?.params?.item || null;
 
   const [form, setForm] = useState({
-    id: null,
-    categoriaId: null,
+    id: item?.id ?? null,
+    categoriaId: item?.id_categoria ?? null,
     categoriaNombre: "",
-    productoNombre: "",
-    ancho: "",
-    alto: "",
-    largo: "",
-    peso: "",
-    cantidad: "",
-    bodegaId: null,
+    productoNombre: item?.nombre ?? "",
+    ancho: item?.ancho ? String(item.ancho) : "",
+    alto: item?.alto ? String(item.alto) : "",
+    largo: item?.largo ? String(item.largo) : "",
+    peso: item?.peso ? String(item.peso) : "",
+    cantidad: item?.cantidad ? String(item.cantidad) : "1",
+    bodegaId: item?.bodegaId ?? null,
   });
 
   const [categoryModalVisible, setCategoryModalVisible] = useState(false);
   const [productModalVisible, setProductModalVisible] = useState(false);
   const [bodegaModalVisible, setBodegaModalVisible] = useState(false);
 
-  // 👇 NUEVO: categorías cargadas localmente desde la API
+  // Categorías cargadas directamente desde la API
   const [categoriasLocal, setCategoriasLocal] = useState([]);
 
   // Cargar categorías directamente del backend al montar la pantalla
@@ -128,6 +110,12 @@ export default function ItemFormScreen(props) {
 
   console.log("[ItemFormScreen] CATEGORY_LIST para modal:", CATEGORY_LIST);
 
+  // Lista de productos sugeridos según la categoría seleccionada
+  const productosDeCategoria = useMemo(() => {
+    if (!form.categoriaNombre) return [];
+    return PRODUCTOS_POR_CATEGORIA[form.categoriaNombre] || [];
+  }, [form.categoriaNombre]);
+
   // --- helpers de navegación (funcionan con props o navigation) ---
   const irMenu = () => {
     if (typeof goToMenu === "function") return goToMenu();
@@ -136,7 +124,6 @@ export default function ItemFormScreen(props) {
 
   const irItemsList = () => {
     if (typeof goToItemsList === "function") return goToItemsList();
-    if (navigation?.navigate) return navigation.navigate("ItemsList");
     if (navigation?.goBack) return navigation.goBack();
   };
 
@@ -147,7 +134,8 @@ export default function ItemFormScreen(props) {
         (c) => c.id === item.id_categoria
       );
 
-      setForm({
+      setForm((prev) => ({
+        ...prev,
         id: item.id,
         categoriaId: item.id_categoria || null,
         categoriaNombre: categoria?.nombre || "",
@@ -156,11 +144,12 @@ export default function ItemFormScreen(props) {
         alto: String(item.alto ?? ""),
         largo: String(item.largo ?? ""),
         peso: String(item.peso ?? ""),
-        cantidad: String(item.cantidad ?? ""),
+        cantidad: String(item.cantidad ?? "1"),
         bodegaId: item.bodegaId ?? null,
-      });
+      }));
     } else {
-      setForm({
+      setForm((prev) => ({
+        ...prev,
         id: null,
         categoriaId: null,
         categoriaNombre: "",
@@ -169,20 +158,19 @@ export default function ItemFormScreen(props) {
         alto: "",
         largo: "",
         peso: "",
-        cantidad: "",
+        cantidad: "1",
         bodegaId: null,
-      });
+      }));
     }
   }, [item, CATEGORY_LIST]);
 
   const cantidadInt = form.cantidad ? clampInt(form.cantidad, 1) : 0;
   const volUnit = vol(form.ancho, form.alto, form.largo);
-  const volNecesario = volUnit * (cantidadInt || 0);
+  const volNecesario =
+    Number.isFinite(volUnit) && cantidadInt ? volUnit * cantidadInt : 0;
 
-  const productosDeCategoria =
-    PRODUCTOS_POR_CATEGORIA[form.categoriaNombre] || [];
+  /* ---------- Handlers de UI ---------- */
 
-  /* ---------- Selectores ---------- */
   const openCategoryModal = () => {
     if (!CATEGORY_LIST.length)
       return Alert.alert(
@@ -200,7 +188,6 @@ export default function ItemFormScreen(props) {
       productoNombre: "",
     }));
     setCategoryModalVisible(false);
-    setProductModalVisible(false);
   };
 
   const openProductModal = () => {
@@ -209,24 +196,31 @@ export default function ItemFormScreen(props) {
     if (!productosDeCategoria.length)
       return Alert.alert(
         "Producto",
-        "No hay productos configurados para esta categoría."
+        "No hay productos sugeridos para esta categoría."
       );
     setProductModalVisible(true);
   };
 
   const selectProduct = (nombre) => {
-    setForm((prev) => ({ ...prev, productoNombre: nombre }));
+    setForm((prev) => ({
+      ...prev,
+      productoNombre: nombre,
+    }));
     setProductModalVisible(false);
   };
 
   const openBodegaModal = () => {
-    if (!bodegas || bodegas.length === 0)
-      return Alert.alert("Bodegas", "No hay bodegas registradas.");
+    if (!bodegas || !bodegas.length) {
+      return Alert.alert("Bodega", "No hay bodegas definidas.");
+    }
     setBodegaModalVisible(true);
   };
 
   const selectBodega = (b) => {
-    setForm((prev) => ({ ...prev, bodegaId: b.id }));
+    setForm((prev) => ({
+      ...prev,
+      bodegaId: b.id,
+    }));
     setBodegaModalVisible(false);
   };
 
@@ -246,10 +240,8 @@ export default function ItemFormScreen(props) {
     const m = metricsOf(b);
     if (isFinite(volNecesario) && volNecesario > m.libre + 1e-9) {
       return Alert.alert(
-        "Sin espacio",
-        `Vol ítem: ${volNecesario.toFixed(
-          3
-        )} m³ · Libre en bodega: ${m.libre.toFixed(3)} m³`
+        "Capacidad excedida",
+        "El volumen total del ítem supera el espacio libre de la bodega."
       );
     }
 
@@ -259,19 +251,16 @@ export default function ItemFormScreen(props) {
         nombre: form.productoNombre,
         id_categoria: form.categoriaId,
         bodegaId: form.bodegaId,
-        ancho: form.ancho,
-        alto: form.alto,
-        largo: form.largo,
-        peso: form.peso,
-        cantidad:
-          form.cantidad && form.cantidad !== "" ? form.cantidad : "1",
-        clase: pesoAClase(form.peso),
+        ancho: Number(form.ancho || 0),
+        alto: Number(form.alto || 0),
+        largo: Number(form.largo || 0),
+        peso: Number(form.peso || 0),
+        cantidad: cantidadInt,
       });
 
-      Alert.alert("Ítem guardado", "El ítem se guardó correctamente.");
       irItemsList();
-    } catch {
-      // saveItem ya lanza Alert en caso de error
+    } catch (err) {
+      console.log("[ItemFormScreen] guardar error:", err);
     }
   };
 
@@ -284,182 +273,163 @@ export default function ItemFormScreen(props) {
       : "No hay bodegas definidas.";
 
   return (
-    <View style={st.screen}>
-      <View style={st.headerRow}>
-        <View>
-          <Text style={st.title}>
+    <View style={st.container}>
+      <ScrollView contentContainerStyle={st.scrollContent}>
+        {/* Header */}
+        <View style={st.headerRow}>
+          <TouchableOpacity onPress={irMenu} style={st.headerBack}>
+            <Text style={st.headerBackText}>{"<"}</Text>
+          </TouchableOpacity>
+          <Text style={st.headerTitle}>
             {form.id ? "Editar ítem" : "Nuevo ítem"}
           </Text>
-          <Text style={st.subtitle}>
-            Completa los datos del producto y su ubicación.
-          </Text>
         </View>
-        <TouchableOpacity onPress={irMenu}>
-          <Text style={st.menuLink}>Menú</Text>
-        </TouchableOpacity>
-      </View>
 
-      <ScrollView
-        contentContainerStyle={{ paddingBottom: 140 }}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Datos del ítem */}
-        <View style={st.sectionBox}>
-          <Text style={st.sectionTitle}>Datos del ítem</Text>
-
-          <Text style={st.label}>Categoría</Text>
-          <TouchableOpacity
-            style={st.selectorBtn}
-            onPress={openCategoryModal}
-          >
-            <Text
-              style={[
-                st.selectorText,
-                !form.categoriaNombre && st.placeholderText,
-              ]}
-            >
-              {form.categoriaNombre || "Toca para elegir categoría"}
-            </Text>
-          </TouchableOpacity>
-
-          <Text style={st.label}>Producto</Text>
-          <TouchableOpacity
+        {/* Categoría */}
+        <Text style={st.label}>Categoría</Text>
+        <TouchableOpacity
+          style={st.touchField}
+          onPress={openCategoryModal}
+          activeOpacity={0.7}
+        >
+          <Text
             style={[
-              st.selectorBtn,
-              !form.categoriaNombre && { opacity: 0.6 },
+              st.touchFieldText,
+              !form.categoriaNombre && st.placeholderText,
             ]}
-            onPress={openProductModal}
-            disabled={!form.categoriaNombre}
           >
-            <Text
-              style={[
-                st.selectorText,
-                !form.productoNombre && st.placeholderText,
-              ]}
-            >
-              {form.productoNombre
-                ? form.productoNombre
-                : form.categoriaNombre
-                ? "Toca para elegir producto"
-                : "Primero selecciona categoría"}
-            </Text>
-          </TouchableOpacity>
+            {form.categoriaNombre || "Toca para elegir categoría"}
+          </Text>
+        </TouchableOpacity>
+
+        {/* Producto */}
+        <Text style={st.label}>Producto</Text>
+        <TouchableOpacity
+          style={st.touchField}
+          onPress={openProductModal}
+          activeOpacity={0.7}
+        >
+          <Text
+            style={[
+              st.touchFieldText,
+              !form.productoNombre && st.placeholderText,
+            ]}
+          >
+            {form.productoNombre || "Toca para elegir producto sugerido"}
+          </Text>
+        </TouchableOpacity>
+
+        <TextInput
+          style={[st.input, { marginTop: 6 }]}
+          placeholder="O escribe el nombre del producto"
+          value={form.productoNombre}
+          onChangeText={(texto) =>
+            setForm((prev) => ({ ...prev, productoNombre: texto }))
+          }
+        />
+
+        {/* Dimensiones */}
+        <View style={st.fieldLabelRow}>
+          <Text style={st.label}>Dimensiones (m)</Text>
+          {Number.isFinite(volUnit) && (
+            <View style={st.volBadge}>
+              <Text style={st.volText}>
+                Vol. unitario: {volUnit.toFixed(2)} m³
+              </Text>
+            </View>
+          )}
         </View>
 
-        {/* Medidas y peso */}
-        <View style={st.sectionBox}>
-          <Text style={st.sectionTitle}>Medidas y peso</Text>
-
-          <Text style={st.label}>Dimensiones (m)</Text>
-          <View style={st.row}>
-            <View style={st.col}>
-              <Text style={st.subLabel}>Ancho</Text>
-              <TextInput
-                style={st.input}
-                placeholder="0.00"
-                keyboardType="numeric"
-                value={form.ancho}
-                onChangeText={(v) =>
-                  setForm((f) => ({ ...f, ancho: v }))
-                }
-              />
-            </View>
-            <View style={st.col}>
-              <Text style={st.subLabel}>Largo</Text>
-              <TextInput
-                style={st.input}
-                placeholder="0.00"
-                keyboardType="numeric"
-                value={form.largo}
-                onChangeText={(v) =>
-                  setForm((f) => ({ ...f, largo: v }))
-                }
-              />
-            </View>
-            <View style={st.col}>
-              <Text style={st.subLabel}>Altura</Text>
-              <TextInput
-                style={st.input}
-                placeholder="0.00"
-                keyboardType="numeric"
-                value={form.alto}
-                onChangeText={(v) =>
-                  setForm((f) => ({ ...f, alto: v }))
-                }
-              />
-            </View>
+        <View style={st.inputRow}>
+          <View style={st.inputGroup}>
+            <Text style={st.smallLabel}>Ancho</Text>
+            <TextInput
+              style={st.input}
+              keyboardType="numeric"
+              value={form.ancho}
+              onChangeText={(v) =>
+                setForm((prev) => ({ ...prev, ancho: v.replace(",", ".") }))
+              }
+            />
           </View>
+          <View style={st.inputGroup}>
+            <Text style={st.smallLabel}>Alto</Text>
+            <TextInput
+              style={st.input}
+              keyboardType="numeric"
+              value={form.alto}
+              onChangeText={(v) =>
+                setForm((prev) => ({ ...prev, alto: v.replace(",", ".") }))
+              }
+            />
+          </View>
+          <View style={st.inputGroup}>
+            <Text style={st.smallLabel}>Largo</Text>
+            <TextInput
+              style={st.input}
+              keyboardType="numeric"
+              value={form.largo}
+              onChangeText={(v) =>
+                setForm((prev) => ({ ...prev, largo: v.replace(",", ".") }))
+              }
+            />
+          </View>
+        </View>
 
-          <Text style={st.label}>Peso unitario (kg)</Text>
-          <TextInput
-            style={st.input}
-            placeholder="0.00"
-            keyboardType="numeric"
-            value={form.peso}
-            onChangeText={(v) =>
-              setForm((f) => ({ ...f, peso: v }))
-            }
-          />
-
-          <Text style={st.label}>Cantidad</Text>
-          <TextInput
-            style={st.input}
-            placeholder="1"
-            keyboardType="numeric"
-            value={String(form.cantidad)}
-            onChangeText={(v) => {
-              const only = v.replace(/[^0-9]/g, "");
-              setForm((f) => ({ ...f, cantidad: only }));
-            }}
-          />
+        {/* Peso y cantidad */}
+        <View style={st.inputRow}>
+          <View style={st.inputGroup}>
+            <Text style={st.smallLabel}>Peso (kg)</Text>
+            <TextInput
+              style={st.input}
+              keyboardType="numeric"
+              value={form.peso}
+              onChangeText={(v) =>
+                setForm((prev) => ({ ...prev, peso: v.replace(",", ".") }))
+              }
+            />
+          </View>
+          <View style={st.inputGroup}>
+            <Text style={st.smallLabel}>Cantidad</Text>
+            <TextInput
+              style={st.input}
+              keyboardType="numeric"
+              value={form.cantidad}
+              onChangeText={(v) =>
+                setForm((prev) => ({ ...prev, cantidad: v.replace(",", ".") }))
+              }
+            />
+          </View>
         </View>
 
         {/* Bodega */}
-        <View style={st.sectionBox}>
-          <Text style={st.sectionTitle}>Ubicación en bodega</Text>
-
-          <Text style={st.label}>Bodega</Text>
-          <TouchableOpacity
-            style={st.selectorBtn}
-            onPress={openBodegaModal}
+        <Text style={[st.label, { marginTop: 16 }]}>Bodega</Text>
+        <TouchableOpacity
+          style={st.touchField}
+          onPress={openBodegaModal}
+          activeOpacity={0.7}
+        >
+          <Text
+            style={[
+              st.touchFieldText,
+              !bodegaNombre && st.placeholderText,
+            ]}
           >
-            <Text
-              style={[
-                st.selectorText,
-                !form.bodegaId && st.placeholderText,
-              ]}
-            >
-              {bodegaNombre || "Toca para elegir bodega"}
-            </Text>
-          </TouchableOpacity>
-          <Text style={st.helper}>{bodegaOptionsText}</Text>
+            {bodegaNombre || "Toca para elegir bodega"}
+          </Text>
+        </TouchableOpacity>
+        <Text style={st.helperText}>{bodegaOptionsText}</Text>
 
-          {/* Resumen */}
-          <View style={st.calcPanel}>
-            <Text style={st.calcTitle}>Resumen rápido</Text>
-            <Text style={st.calcLine}>
-              Vol/unidad:{" "}
-              {isFinite(volUnit)
-                ? `${volUnit.toFixed(3)} m³`
-                : "0.000 m³"}
-            </Text>
-            <Text style={st.calcLine}>
-              Cantidad total: {cantidadInt || 0}
-            </Text>
-            <Text style={st.calcLine}>
-              Volumen necesario:{" "}
-              {isFinite(volNecesario)
-                ? `${volNecesario.toFixed(3)} m³`
-                : "0.000 m³"}
-            </Text>
-            <Text style={st.calcLine}>
-              Peso (clase):{" "}
-              <Text style={{ fontWeight: "700" }}>
-                {pesoAClase(form.peso)}
-              </Text>
+        {/* Volumen necesario */}
+        {Number.isFinite(volNecesario) && (
+          <View style={{ marginTop: 16 }}>
+            <Text style={st.label}>Volumen total requerido</Text>
+            <Text style={st.helperText}>
+              {cantidadInt} unidades x {volUnit.toFixed(2)} m³ ={" "}
+              {volNecesario.toFixed(2)} m³
             </Text>
           </View>
-        </View>
+        )}
       </ScrollView>
 
       {/* Bottom bar: Lista / Guardar */}
@@ -472,37 +442,31 @@ export default function ItemFormScreen(props) {
           style={[st.bottomBtn, st.bottomBtnActive]}
           onPress={guardar}
         >
-          <Text
-            style={[
-              st.bottomBtnText,
-              st.bottomBtnTextActive,
-            ]}
-          >
-            {form.id ? "Guardar cambios" : "Crear ítem"}
+          <Text style={[st.bottomBtnText, st.bottomBtnTextActive]}>
+            Guardar
           </Text>
         </TouchableOpacity>
       </View>
 
-      {/* Modal categorías */}
+      {/* MODAL CATEGORÍAS */}
       <Modal
         visible={categoryModalVisible}
         transparent
         animationType="fade"
         onRequestClose={() => setCategoryModalVisible(false)}
       >
-        <View style={st.modalBackdrop}>
-          <View style={st.modalBox}>
-            <Text style={st.modalTitle}>Seleccionar categoría</Text>
+        <View style={st.modalOverlay}>
+          <View style={st.modalCard}>
+            <Text style={st.modalTitle}>Selecciona una categoría</Text>
             <FlatList
               data={CATEGORY_LIST}
-              keyExtractor={(c) => String(c.id)}
-              style={{ maxHeight: 260 }}
-              renderItem={({ item: c }) => (
+              keyExtractor={(item) => String(item.id)}
+              renderItem={({ item: cat }) => (
                 <TouchableOpacity
-                  style={st.destItem}
-                  onPress={() => selectCategory(c)}
+                  style={st.modalItem}
+                  onPress={() => selectCategory(cat)}
                 >
-                  <Text style={st.destItemText}>{c.nombre}</Text>
+                  <Text style={st.modalItemText}>{cat.nombre}</Text>
                 </TouchableOpacity>
               )}
             />
@@ -516,26 +480,25 @@ export default function ItemFormScreen(props) {
         </View>
       </Modal>
 
-      {/* Modal productos */}
+      {/* MODAL PRODUCTOS */}
       <Modal
         visible={productModalVisible}
         transparent
         animationType="fade"
         onRequestClose={() => setProductModalVisible(false)}
       >
-        <View style={st.modalBackdrop}>
-          <View style={st.modalBox}>
-            <Text style={st.modalTitle}>Seleccionar producto</Text>
+        <View style={st.modalOverlay}>
+          <View style={st.modalCard}>
+            <Text style={st.modalTitle}>Productos sugeridos</Text>
             <FlatList
               data={productosDeCategoria}
-              keyExtractor={(p, i) => `${i}-${p}`}
-              style={{ maxHeight: 260 }}
-              renderItem={({ item: p }) => (
+              keyExtractor={(item, index) => String(index)}
+              renderItem={({ item: nombre }) => (
                 <TouchableOpacity
-                  style={st.destItem}
-                  onPress={() => selectProduct(p)}
+                  style={st.modalItem}
+                  onPress={() => selectProduct(nombre)}
                 >
-                  <Text style={st.destItemText}>{p}</Text>
+                  <Text style={st.modalItemText}>{nombre}</Text>
                 </TouchableOpacity>
               )}
             />
@@ -549,39 +512,36 @@ export default function ItemFormScreen(props) {
         </View>
       </Modal>
 
-      {/* Modal bodegas */}
+      {/* MODAL BODEGAS */}
       <Modal
         visible={bodegaModalVisible}
         transparent
         animationType="fade"
         onRequestClose={() => setBodegaModalVisible(false)}
       >
-        <View style={st.modalBackdrop}>
-          <View style={st.modalBox}>
-            <Text style={st.modalTitle}>Seleccionar bodega</Text>
+        <View style={st.modalOverlay}>
+          <View style={st.modalCard}>
+            <Text style={st.modalTitle}>Selecciona una bodega</Text>
             <FlatList
               data={bodegas}
               keyExtractor={(b) => String(b.id)}
-              style={{ maxHeight: 260 }}
-              renderItem={({ item: b }) => {
-                const m = metricsOf(b);
-                return (
-                  <TouchableOpacity
-                    style={st.destItem}
-                    onPress={() => selectBodega(b)}
+              renderItem={({ item: b }) => (
+                <TouchableOpacity
+                  style={st.destItem}
+                  onPress={() => selectBodega(b)}
+                >
+                  <Text style={st.destItemText}>{b.nombre}</Text>
+                  <Text
+                    style={{
+                      fontSize: 10,
+                      color: "#6b7280",
+                      marginTop: 2,
+                    }}
                   >
-                    <Text style={st.destItemText}>{b.nombre}</Text>
-                    <Text
-                      style={{
-                        fontSize: 10,
-                        color: "#6b7280",
-                      }}
-                    >
-                      Libre: {m.libre.toFixed(2)} m³
-                    </Text>
-                  </TouchableOpacity>
-                );
-              }}
+                    ID {b.id} · {b.ciudad || "-"}
+                  </Text>
+                </TouchableOpacity>
+              )}
             />
             <TouchableOpacity
               style={[st.btn, st.btnPrimary, { marginTop: 8 }]}
@@ -597,129 +557,102 @@ export default function ItemFormScreen(props) {
 }
 
 const st = StyleSheet.create({
-  screen: {
+  container: {
     flex: 1,
-    backgroundColor: "#f3f4f6",
+    backgroundColor: "#f9fafb",
+  },
+  scrollContent: {
     paddingHorizontal: 16,
     paddingTop: 18,
     paddingBottom: 140,
   },
   headerRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 8,
+    alignItems: "center",
+    marginBottom: 12,
   },
-  title: { fontSize: 20, fontWeight: "700", color: "#111827" },
-  subtitle: { fontSize: 12, color: "#6b7280" },
-  menuLink: {
-    fontSize: 11,
+  headerBack: {
+    marginRight: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  headerBackText: {
+    fontSize: 18,
     color: "#2563eb",
     fontWeight: "600",
   },
-  sectionBox: {
-    marginBottom: 14,
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#e5e7eb",
-    backgroundColor: "#f9fafb",
-  },
-  sectionTitle: {
-    fontSize: 14,
+  headerTitle: {
+    fontSize: 18,
     fontWeight: "700",
     color: "#111827",
-    marginBottom: 6,
   },
   label: {
-    color: "#475569",
-    marginTop: 6,
-    marginBottom: 4,
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: "600",
-  },
-  subLabel: { color: "#6b7280", fontSize: 11, marginBottom: 2 },
-  row: { flexDirection: "row", gap: 8, marginBottom: 4 },
-  col: { flex: 1 },
-  input: {
-    borderWidth: 1,
-    borderColor: "#d4d4d8",
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    backgroundColor: "#fff",
-    fontSize: 12,
+    color: "#374151",
     marginBottom: 4,
+    marginTop: 12,
   },
-  selectorBtn: {
+  smallLabel: {
+    fontSize: 11,
+    fontWeight: "500",
+    color: "#4b5563",
+    marginBottom: 2,
+  },
+  touchField: {
     borderWidth: 1,
-    borderColor: "#d4d4d8",
-    paddingHorizontal: 10,
+    borderColor: "#e5e7eb",
+    borderRadius: 10,
+    paddingHorizontal: 12,
     paddingVertical: 10,
-    borderRadius: 10,
-    backgroundColor: "#fff",
-    marginBottom: 4,
+    backgroundColor: "#ffffff",
   },
-  selectorText: {
+  touchFieldText: {
+    fontSize: 13,
     color: "#111827",
-    fontWeight: "600",
-    fontSize: 12,
   },
   placeholderText: {
     color: "#9ca3af",
-    fontWeight: "400",
   },
-  calcPanel: {
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    backgroundColor: "#ffffff",
-    borderRadius: 10,
-    padding: 10,
-    marginTop: 8,
-  },
-  calcTitle: {
-    fontWeight: "700",
-    color: "#1e293b",
-    fontSize: 12,
-  },
-  calcLine: { color: "#475569", marginTop: 2, fontSize: 11 },
-  helper: { fontSize: 9, color: "#9ca3af", marginTop: 2 },
-  btn: {
-    paddingVertical: 10,
-    borderRadius: 12,
-    alignItems: "center",
-    marginTop: 4,
-  },
-  btnPrimary: { backgroundColor: "#2563eb" },
-  btnTxt: { color: "#fff", fontWeight: "700", fontSize: 13 },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: "rgba(15,23,42,0.6)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  modalBox: {
-    width: "88%",
-    maxHeight: "70%",
-    backgroundColor: "#fff",
-    borderRadius: 14,
-    padding: 12,
+  input: {
     borderWidth: 1,
     borderColor: "#e5e7eb",
-  },
-  modalTitle: {
-    fontSize: 15,
-    fontWeight: "700",
-    marginBottom: 6,
-    color: "#111827",
-  },
-  destItem: {
+    borderRadius: 10,
+    paddingHorizontal: 12,
     paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: "#e5e7eb",
+    fontSize: 13,
+    backgroundColor: "#ffffff",
   },
-  destItemText: { fontSize: 13, color: "#111827" },
+  inputRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 6,
+  },
+  inputGroup: {
+    flex: 1,
+  },
+  fieldLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 12,
+  },
+  volBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: "#eff6ff",
+  },
+  volText: {
+    fontSize: 10,
+    color: "#1d4ed8",
+    fontWeight: "500",
+  },
+  helperText: {
+    fontSize: 11,
+    color: "#6b7280",
+    marginTop: 4,
+  },
   bottomBar: {
     position: "absolute",
     left: 16,
@@ -754,5 +687,56 @@ const st = StyleSheet.create({
   bottomBtnTextActive: {
     color: "#ffffff",
     fontWeight: "600",
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 16,
+  },
+  modalCard: {
+    width: "100%",
+    maxHeight: "80%",
+    backgroundColor: "#ffffff",
+    borderRadius: 16,
+    padding: 16,
+  },
+  modalTitle: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#111827",
+    marginBottom: 8,
+  },
+  modalItem: {
+    paddingVertical: 8,
+  },
+  modalItemText: {
+    fontSize: 13,
+    color: "#111827",
+  },
+  btn: {
+    paddingVertical: 8,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 4,
+  },
+  btnPrimary: {
+    backgroundColor: "#2563eb",
+  },
+  btnTxt: {
+    fontSize: 13,
+    color: "#ffffff",
+    fontWeight: "600",
+  },
+  destItem: {
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#e5e7eb",
+  },
+  destItemText: {
+    fontSize: 13,
+    color: "#111827",
   },
 });

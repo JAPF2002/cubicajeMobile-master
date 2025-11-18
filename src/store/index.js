@@ -65,6 +65,23 @@ function nextId(list) {
   return maxId + 1;
 }
 
+// (No la usamos ahora, pero la dejo por si más adelante quieres reutilizarla)
+const normalizeBodegaRow = (row) => ({
+  id: Number(row.id_bodega ?? row.id ?? 0),
+  nombre: row.nombre ?? "",
+  ciudad: row.ciudad ?? "",
+  direccion: row.direccion ?? "",
+  ancho: Number(row.ancho ?? 0),
+  largo: Number(row.largo ?? 0),
+  alto: Number(row.alto ?? 0),
+  active:
+    row.activo === 1 ||
+    row.activo === true ||
+    row.is_active === 1 ||
+    row.is_active === true,
+  layout: row.layout || row.bodega_layout || null,
+});
+
 export function AppProvider({ children }) {
   const [state, setState] = useState(initialState);
   const [hydrated, setHydrated] = useState(false);
@@ -101,6 +118,7 @@ export function AppProvider({ children }) {
     })();
   }, [state, hydrated]);
 
+  // Sincronización inicial desde la API
   useEffect(() => {
     if (!hydrated) return;
 
@@ -110,7 +128,7 @@ export function AppProvider({ children }) {
         await syncBodegasFromApi();
         // si quieres también categorías / ítems, los llamas acá:
         // await syncCategoriesFromApi();
-        // await reloadItems();  // o como se llame tu función
+        // await reloadItems();
       } catch (err) {
         console.log("[AppProvider] error sincronizando datos iniciales:", err);
       }
@@ -165,24 +183,6 @@ export function AppProvider({ children }) {
 
   // ---------- BODEGAS ----------
 
-const normalizeBodegaRow = (row) => ({
-  id: Number(row.id_bodega ?? row.id ?? 0),
-  nombre: row.nombre ?? "",
-  ciudad: row.ciudad ?? "",
-  direccion: row.direccion ?? "",
-  ancho: Number(row.ancho ?? 0),
-  largo: Number(row.largo ?? 0),
-  alto: Number(row.alto ?? 0),
-  // 👇 ahora considera is_active además de activo
-  active:
-    row.activo === 1 ||
-    row.activo === true ||
-    row.is_active === 1 ||
-    row.is_active === true,
-  layout: row.layout || row.bodega_layout || null,
-});
-
-
   const syncBodegasFromApi = async () => {
     try {
       const res = await getBodegas();
@@ -213,22 +213,69 @@ const normalizeBodegaRow = (row) => ({
 
       console.log("[syncBodegasFromApi] rows detectadas:", rows.length);
 
-      const bodegasFromDb = rows.map((row) => ({
-  id: Number(row.id_bodega ?? row.id),
-  nombre: row.nombre || "",
-  ciudad: row.ciudad || "",
-  direccion: row.direccion || "",
-  ancho: Number(row.ancho || 0),
-  largo: Number(row.largo || 0),
-  alto: Number(row.alto || 0),
-  // 👇 considerar ambos nombres de columna
-  active:
-    row.activo === 1 ||
-    row.activo === true ||
-    row.is_active === 1 ||
-    row.is_active === true,
-  id_usuario: row.id_usuario ?? null,
-}));
+      const bodegasFromDb = rows.map((row) => {
+        // 🔹 Intentamos parsear el JSON del layout que viene desde MySQL
+        let layoutMapaObj = null;
+
+        if (row.layout_mapa_json) {
+          try {
+            if (typeof row.layout_mapa_json === "string") {
+              layoutMapaObj = JSON.parse(row.layout_mapa_json);
+            } else {
+              layoutMapaObj = row.layout_mapa_json;
+            }
+          } catch (e) {
+            console.log(
+              "[syncBodegasFromApi] error parse layout_mapa_json para bodega",
+              row.id_bodega ?? row.id,
+              e
+            );
+            layoutMapaObj = null;
+          }
+        }
+
+        return {
+          id: Number(row.id_bodega ?? row.id),
+          nombre: row.nombre || "",
+          ciudad: row.ciudad || "",
+          direccion: row.direccion || "",
+          ancho: Number(row.ancho || 0),
+          largo: Number(row.largo || 0),
+          alto: Number(row.alto || 0),
+
+          // estado activo (acepta activo o is_active)
+          active:
+            row.activo === 1 ||
+            row.activo === true ||
+            row.is_active === 1 ||
+            row.is_active === true,
+
+          id_usuario: row.id_usuario ?? null,
+
+          // 🔹 Campos crudos del layout (por si se necesitan)
+          layout_ancho: Number(row.layout_ancho || 0),
+          layout_largo: Number(row.layout_largo || 0),
+          layout_mapa_json: row.layout_mapa_json || null,
+
+          // 🔹 OBJETO layout que usará Bodega3DScreen y otras pantallas
+          layout: layoutMapaObj
+            ? {
+                ancho: Number(row.layout_ancho || 0),
+                largo: Number(row.layout_largo || 0),
+                mapa_json: layoutMapaObj,
+              }
+            : null,
+        };
+      });
+
+      // 👀 Para que veas cómo queda el layout en memoria
+      console.log(
+        "[syncBodegasFromApi] bodegas mapeadas (resumen layout):",
+        bodegasFromDb.map((b) => ({
+          id: b.id,
+          layout: b.layout,
+        }))
+      );
 
       setState((prev) => ({
         ...prev,
@@ -239,7 +286,6 @@ const normalizeBodegaRow = (row) => ({
       throw err;
     }
   };
-
 
   const saveBodega = async (bodega) => {
     const isUpdate = !!bodega.id;
@@ -254,6 +300,7 @@ const normalizeBodegaRow = (row) => ({
       alto: Number(bodega.alto) || 0,
       id_usuario: userId,
       activo: bodega.active ? 1 : 0,
+      // 👇 layout completo (ancho, largo, mapa_json)
       layout: bodega.layout || null,
     };
 

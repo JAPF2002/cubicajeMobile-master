@@ -39,12 +39,15 @@ export default function BodegaFormScreen(props) {
 
   // 🟦 Estado para el mapa del Tablero
   const [gridMap, setGridMap] = useState(() => {
-    // Aquí intentamos leer si viene algo desde la bodega (editar)
-    // Ajusta estos nombres si tu API usa otro campo.
+    // Intentamos leer desde lo que venga en la bodega (editar)
+    // Orden de prioridad:
+    // 1) bodega.layout.mapa_json (store normalizado)
+    // 2) layout_mapa_json (string u objeto crudo desde API)
+    // 3) mapa_json suelto
     const raw =
-      editingBodega?.mapa_json ||
-      editingBodega?.layout_mapa_json ||
       editingBodega?.layout?.mapa_json ||
+      editingBodega?.layout_mapa_json ||
+      editingBodega?.mapa_json ||
       null;
 
     if (!raw) return {};
@@ -54,7 +57,7 @@ export default function BodegaFormScreen(props) {
       }
       return raw;
     } catch (e) {
-      console.log("[BodegaFormScreen] error parse mapa_json:", e);
+      console.log("[BodegaFormScreen] error parse mapa_json inicial:", e);
       return {};
     }
   });
@@ -99,6 +102,13 @@ export default function BodegaFormScreen(props) {
       );
     }
 
+    // 🔹 layout que enviaremos al backend y al store
+    const layout = {
+      ancho: anchoNum,
+      largo: largoNum,
+      mapa_json: gridMap || {}, // objeto { "0":"B", "1":"D", ... }
+    };
+
     const bodegaPayload = {
       id: editingBodega?.id || null,
       nombre: nombre.trim(),
@@ -108,14 +118,7 @@ export default function BodegaFormScreen(props) {
       largo: largoNum,
       alto: altoNum,
       active,
-
-      // 🟦 Enviamos también el layout de la bodega
-      // Ajusta el nombre del campo según tu backend (por ejemplo: layout, mapa_json, etc.).
-      layout: {
-        ancho: anchoNum,
-        largo: largoNum,
-        mapa_json: gridMap,
-      },
+      layout,
     };
 
     try {
@@ -257,13 +260,13 @@ export default function BodegaFormScreen(props) {
           />
         </View>
 
-        {/* TABLERO con mapa y letra A */}
+        {/* TABLERO con mapa */}
         <View style={{ marginTop: 20 }}>
           <Text style={st.label}>Mapa de posiciones (opcional)</Text>
           <Text style={st.helpText}>
             Marca las posiciones disponibles, ocupadas, bloqueadas o con espacio
-            en altura. Esto por ahora es solo visual; más adelante lo podemos
-            usar para la vista 3D y el algoritmo de cubicaje.
+            en altura. Este mapa se usará para la vista 3D y el algoritmo de
+            cubicaje.
           </Text>
 
           <Tablero

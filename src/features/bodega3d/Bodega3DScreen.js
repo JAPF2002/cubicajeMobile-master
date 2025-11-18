@@ -24,7 +24,30 @@ export default function Bodega3DScreen({ route }) {
   const layout = bodega?.layout || layoutParam || null;
   const layoutAncho = Number(layout?.ancho ?? bw) || 0;
   const layoutLargo = Number(layout?.largo ?? bl) || 0;
-  const layoutMapa = layout?.mapa_json || {};
+
+  // Aseguramos que mapa_json sea un OBJETO, aunque venga como string
+  let layoutMapa = {};
+  const rawMapa = layout?.mapa_json;
+
+  if (rawMapa) {
+    if (typeof rawMapa === "string") {
+      try {
+        layoutMapa = JSON.parse(rawMapa);
+      } catch (e) {
+        console.log("[Bodega3DScreen] error parse layout.mapa_json:", e);
+        layoutMapa = {};
+      }
+    } else {
+      layoutMapa = rawMapa;
+    }
+  }
+
+  console.log("[Bodega3DScreen] bodega:", bodegaId, bodega);
+  console.log("[Bodega3DScreen] layout usado:", {
+    ancho: layoutAncho,
+    largo: layoutLargo,
+    mapa_json: layoutMapa,
+  });
 
   // Ítems dentro de esta bodega
   const itemsInBodega = items
@@ -145,6 +168,69 @@ export default function Bodega3DScreen({ route }) {
               [4,5],[5,6],[6,7],[7,4],
               [0,4],[1,5],[2,6],[3,7]
             ];
+
+            /* ------- Layout de celdas del piso (D / B / O) ------- */
+            function drawFloorCells() {
+              if (!layoutData || !layoutData.ancho || !layoutData.largo) return;
+
+              var gW = layoutData.ancho;
+              var gL = layoutData.largo;
+              var mapa = layoutData.mapa || {};
+
+              // Cada celda ocupa un pedazo del ancho/largo total de la bodega
+              var cellWorldW = ((${bw} * scale) / gW);
+              var cellWorldL = ((${bl} * scale) / gL);
+
+              for (var index = 0; index < gW * gL; index++) {
+                var estado = mapa[index] ?? mapa[String(index)] ?? "D";
+
+                var gx = index % gW;
+                var gz = Math.floor(index / gW);
+
+                var centerX = -halfX + cellWorldW * (gx + 0.5);
+                var centerZ = -halfZ + cellWorldL * (gz + 0.5);
+                var y = -halfY; // piso
+
+                var hw = cellWorldW / 2;
+                var hl = cellWorldL / 2;
+
+                var color;
+                if (estado === "B") {
+                  color = "rgba(239,68,68,0.55)"; // rojo bloqueado
+                } else if (estado === "O") {
+                  color = "rgba(234,179,8,0.55)"; // amarillo ocupado
+                } else {
+                  color = "rgba(34,197,94,0.35)"; // verde disponible
+                }
+
+                var p0 = project({x:centerX - hw, y:y, z:centerZ - hl});
+                var p1 = project({x:centerX + hw, y:y, z:centerZ - hl});
+                var p2 = project({x:centerX + hw, y:y, z:centerZ + hl});
+                var p3 = project({x:centerX - hw, y:y, z:centerZ + hl});
+
+                ctx.beginPath();
+                ctx.moveTo(p0.x, p0.y);
+                ctx.lineTo(p1.x, p1.y);
+                ctx.lineTo(p2.x, p2.y);
+                ctx.lineTo(p3.x, p3.y);
+                ctx.closePath();
+
+                ctx.fillStyle = color;
+                ctx.fill();
+
+                ctx.strokeStyle = "rgba(15,23,42,0.9)";
+                ctx.lineWidth = 0.6;
+                ctx.stroke();
+
+                // 👉 LETRA EN EL CENTRO (D / B / O)
+                var centerProj = project({x: centerX, y: y + 0.01, z: centerZ});
+                ctx.fillStyle = "#e5e7eb";
+                ctx.font = "10px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText(estado, centerProj.x, centerProj.y);
+              }
+            }
 
             /* ------- Layout de ítems dentro de la bodega ------- */
             function buildItemBoxes() {
@@ -343,7 +429,7 @@ export default function Bodega3DScreen({ route }) {
               for (var y = 0; y <= h; y += step) {
                 ctx.beginPath();
                 ctx.moveTo(0, y);
-                ctx.lineTo(w, h);
+                ctx.lineTo(w, y);
                 ctx.stroke();
               }
               ctx.restore();
@@ -388,69 +474,6 @@ export default function Bodega3DScreen({ route }) {
                 ctx.lineTo(b.x, b.y);
                 ctx.stroke();
               });
-            }
-
-            // 🟩🟥 DIBUJAR EL MAPE0 DEL PISO SEGÚN layoutData (D/B/O) + LETRAS
-            function drawFloorCells() {
-              if (!layoutData || !layoutData.ancho || !layoutData.largo) return;
-
-              var gW = layoutData.ancho;
-              var gL = layoutData.largo;
-              var mapa = layoutData.mapa || {};
-
-              // Cada celda ocupa un pedazo del ancho/largo total de la bodega
-              var cellWorldW = ((${bw} * scale) / gW);
-              var cellWorldL = ((${bl} * scale) / gL);
-
-              for (var index = 0; index < gW * gL; index++) {
-                var estado = mapa[index] ?? mapa[String(index)] ?? "D";
-
-                var gx = index % gW;
-                var gz = Math.floor(index / gW);
-
-                var centerX = -halfX + cellWorldW * (gx + 0.5);
-                var centerZ = -halfZ + cellWorldL * (gz + 0.5);
-                var y = -halfY; // piso
-
-                var hw = cellWorldW / 2;
-                var hl = cellWorldL / 2;
-
-                var color;
-                if (estado === "B") {
-                  color = "rgba(239,68,68,0.55)"; // rojo bloqueado
-                } else if (estado === "O") {
-                  color = "rgba(234,179,8,0.55)"; // amarillo ocupado
-                } else {
-                  color = "rgba(34,197,94,0.35)"; // verde disponible
-                }
-
-                var p0 = project({x:centerX - hw, y:y, z:centerZ - hl});
-                var p1 = project({x:centerX + hw, y:y, z:centerZ - hl});
-                var p2 = project({x:centerX + hw, y:y, z:centerZ + hl});
-                var p3 = project({x:centerX - hw, y:y, z:centerZ + hl});
-
-                ctx.beginPath();
-                ctx.moveTo(p0.x, p0.y);
-                ctx.lineTo(p1.x, p1.y);
-                ctx.lineTo(p2.x, p2.y);
-                ctx.lineTo(p3.x, p3.y);
-                ctx.closePath();
-
-                ctx.fillStyle = color;
-                ctx.fill();
-
-                ctx.strokeStyle = "rgba(15,23,42,0.9)";
-                ctx.lineWidth = 0.6;
-                ctx.stroke();
-
-                // 👉 LETRA EN EL CENTRO (D / B / O)
-                var centerProj = project({x: centerX, y: y + 0.01, z: centerZ});
-                ctx.fillStyle = "#e5e7eb";
-                ctx.font = "10px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
-                ctx.textAlign = "center";
-                ctx.textBaseline = "middle";
-                ctx.fillText(estado, centerProj.x, centerProj.y);
-              }
             }
 
             function drawItems() {

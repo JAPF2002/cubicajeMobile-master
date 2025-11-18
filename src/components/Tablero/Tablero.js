@@ -1,5 +1,5 @@
 // src/components/Tablero/Tablero.js
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 
 const MODOS = {
@@ -12,31 +12,55 @@ const MODOS = {
 export default function Tablero({
   ancho = 0,
   largo = 0,
-  mapaInicial = {},
+  mapaInicial = null,
   onGridMapChange,
 }) {
   const [gridMap, setGridMap] = useState({});
   const [modoActual, setModoActual] = useState("D");
 
-  // Cuando cambie el mapaInicial o las dimensiones, lo cargamos
+  const totalCeldas = useMemo(() => {
+    const a = Number(ancho) || 0;
+    const l = Number(largo) || 0;
+    return a > 0 && l > 0 ? a * l : 0;
+  }, [ancho, largo]);
+
+  // 👉 Cargar mapa inicial desde BD + rellenar con "D"
   useEffect(() => {
-    if (!mapaInicial || typeof mapaInicial !== "object") {
+    if (!totalCeldas) {
       setGridMap({});
       return;
     }
-    setGridMap(mapaInicial);
-  }, [mapaInicial, ancho, largo]);
 
-  const totalCeldas = Math.max(0, ancho) * Math.max(0, largo);
+    const nuevo = {};
+    for (let i = 0; i < totalCeldas; i++) {
+      nuevo[i] = "D";
+    }
 
+    if (mapaInicial && typeof mapaInicial === "object") {
+      Object.keys(mapaInicial).forEach((key) => {
+        const val = mapaInicial[key];
+        if (val && MODOS[val]) {
+          nuevo[key] = val;
+        }
+      });
+    }
+
+    setGridMap(nuevo);
+  }, [totalCeldas, mapaInicial]);
+
+  // 🔹 SOLO aquí (en el evento), nunca durante el render
   const handleCellPress = (index) => {
     if (!totalCeldas) return;
 
     setGridMap((prev) => {
-      const nuevo = { ...prev, [index]: modoActual };
-      if (onGridMapChange) {
+      const current = prev[index] || "D";
+      const nextState = current === modoActual ? "D" : modoActual;
+      const nuevo = { ...prev, [index]: nextState };
+
+      if (typeof onGridMapChange === "function") {
         onGridMapChange(nuevo);
       }
+
       return nuevo;
     });
   };
@@ -50,10 +74,7 @@ export default function Tablero({
         key={index}
         style={[
           styles.cell,
-          {
-            backgroundColor: config.color,
-            borderColor: config.borderColor,
-          },
+          { backgroundColor: config.color, borderColor: config.borderColor },
         ]}
         onPress={() => handleCellPress(index)}
         activeOpacity={0.7}
@@ -116,21 +137,11 @@ export default function Tablero({
       </View>
 
       <Text style={styles.modeHelp}>
-        Modo actual: {MODOS[modoActual].label}. Toca una celda para marcarla
+        Modo actual: {MODOS[modoActual]?.label}. Toca una celda para marcarla
         con esta letra.
       </Text>
 
-      {/* Grilla */}
       <View style={styles.board}>{filas}</View>
-
-      {/* Leyenda */}
-      <View style={styles.legend}>
-        <Text style={styles.legendTitle}>Leyenda</Text>
-        <Text style={styles.legendText}>D = disponible</Text>
-        <Text style={styles.legendText}>O = ocupada</Text>
-        <Text style={styles.legendText}>B = bloqueada / pasillo</Text>
-        <Text style={styles.legendText}>A = hay espacio en altura</Text>
-      </View>
     </View>
   );
 }
@@ -179,7 +190,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   board: {
-    width: "100%",        // 🔹 ocupa todo el ancho del contenedor
+    width: "100%",
     alignSelf: "center",
     borderWidth: 1,
     borderColor: "#e5e7eb",
@@ -189,7 +200,7 @@ const styles = StyleSheet.create({
   },
   cell: {
     flex: 1,
-    aspectRatio: 1,       // 🔹 cuadradas, grandes
+    aspectRatio: 1,
     borderWidth: 0.5,
     alignItems: "center",
     justifyContent: "center",
@@ -211,17 +222,5 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: "#6b7280",
     textAlign: "center",
-  },
-  legend: {
-    marginTop: 8,
-  },
-  legendTitle: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#374151",
-  },
-  legendText: {
-    fontSize: 11,
-    color: "#6b7280",
   },
 });

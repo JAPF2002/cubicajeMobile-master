@@ -101,9 +101,25 @@ export function AppProvider({ children }) {
     })();
   }, [state, hydrated]);
 
+  useEffect(() => {
+    if (!hydrated) return;
+
+    (async () => {
+      try {
+        console.log("[AppProvider] sincronizando bodegas desde API...");
+        await syncBodegasFromApi();
+        // si quieres también categorías / ítems, los llamas acá:
+        // await syncCategoriesFromApi();
+        // await reloadItems();  // o como se llame tu función
+      } catch (err) {
+        console.log("[AppProvider] error sincronizando datos iniciales:", err);
+      }
+    })();
+  }, [hydrated]);
+
   // ---------- Derivados ----------
 
-  // Items agrupados por bodegaId
+  // Items agrupados por id_bodega
   const itemsByBodega = useMemo(() => {
     const m = new Map();
     for (const it of state.items) {
@@ -149,47 +165,81 @@ export function AppProvider({ children }) {
 
   // ---------- BODEGAS ----------
 
-  const normalizeBodegaRow = (row) => ({
-    id: Number(row.id_bodega ?? row.id ?? 0),
-    nombre: row.nombre ?? "",
-    ciudad: row.ciudad ?? "",
-    direccion: row.direccion ?? "",
-    ancho: Number(row.ancho ?? 0),
-    largo: Number(row.largo ?? 0),
-    alto: Number(row.alto ?? 0),
-    active: row.activo === 1 || row.activo === true,
-    layout: row.layout || row.bodega_layout || null,
-  });
+const normalizeBodegaRow = (row) => ({
+  id: Number(row.id_bodega ?? row.id ?? 0),
+  nombre: row.nombre ?? "",
+  ciudad: row.ciudad ?? "",
+  direccion: row.direccion ?? "",
+  ancho: Number(row.ancho ?? 0),
+  largo: Number(row.largo ?? 0),
+  alto: Number(row.alto ?? 0),
+  // 👇 ahora considera is_active además de activo
+  active:
+    row.activo === 1 ||
+    row.activo === true ||
+    row.is_active === 1 ||
+    row.is_active === true,
+  layout: row.layout || row.bodega_layout || null,
+});
+
 
   const syncBodegasFromApi = async () => {
     try {
       const res = await getBodegas();
-      const raw = Array.isArray(res?.body)
-        ? res.body
-        : Array.isArray(res)
-        ? res
-        : Array.isArray(res?.data)
-        ? res.data
-        : [];
+      console.log("[syncBodegasFromApi] res bruto:", res);
 
-      if (!Array.isArray(raw)) {
-        throw new Error("Formato inesperado en /api/bodegas");
+      // La API puede venir de varias formas, normalizamos:
+      const error = res?.error ?? false;
+      const topBody = res?.body ?? res?.data ?? res;
+
+      if (error) {
+        throw new Error(topBody?.message || "Error obteniendo bodegas");
       }
 
-      const bodegas = raw.map(normalizeBodegaRow);
+      let rows = [];
+
+      // Distintos formatos posibles
+      if (Array.isArray(res)) {
+        rows = res;
+      } else if (Array.isArray(res?.body?.body)) {
+        rows = res.body.body;
+      } else if (Array.isArray(res?.body)) {
+        rows = res.body;
+      } else if (Array.isArray(topBody?.body)) {
+        rows = topBody.body;
+      } else if (Array.isArray(topBody)) {
+        rows = topBody;
+      }
+
+      console.log("[syncBodegasFromApi] rows detectadas:", rows.length);
+
+      const bodegasFromDb = rows.map((row) => ({
+  id: Number(row.id_bodega ?? row.id),
+  nombre: row.nombre || "",
+  ciudad: row.ciudad || "",
+  direccion: row.direccion || "",
+  ancho: Number(row.ancho || 0),
+  largo: Number(row.largo || 0),
+  alto: Number(row.alto || 0),
+  // 👇 considerar ambos nombres de columna
+  active:
+    row.activo === 1 ||
+    row.activo === true ||
+    row.is_active === 1 ||
+    row.is_active === true,
+  id_usuario: row.id_usuario ?? null,
+}));
 
       setState((prev) => ({
         ...prev,
-        bodegas,
+        bodegas: bodegasFromDb,
       }));
     } catch (err) {
       console.log("[syncBodegasFromApi] error:", err);
-      Alert.alert(
-        "Error",
-        err?.message || "No se pudieron cargar las bodegas."
-      );
+      throw err;
     }
   };
+
 
   const saveBodega = async (bodega) => {
     const isUpdate = !!bodega.id;

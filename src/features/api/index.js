@@ -85,13 +85,30 @@ const deleteBodegaApi = async (id_bodega, mode) => {
   return await reqHelper(url, 'delete');
 };
 
+
+// 🔹 Reordenar ítems por prioridad dentro de una bodega
+// body = { items: [ { id_item, prioridad }, ... ] }
+const recubicarBodegaPrioridadApi = async (id_bodega, data) => {
+  const url = `${Config.API_URL}/api/bodegas/${id_bodega}/recubicar-prioridad`;
+  console.log(
+    '[API] recubicarBodegaPrioridad URL =>',
+    url,
+    'payload:',
+    data
+  );
+  return await reqHelper(url, 'post', data);
+};
+
+
+
+
+
 /* ------------ CATEGORÍAS (msApiCubicaje) ------------ */
 
 const getCategories = async () =>
   await reqHelper(`${Config.API_URL}/api/categorias`, 'get');
 
 /* ------------ EXPORTS ------------ */
-
 export {
   // Plannings
   getPlannings,
@@ -115,6 +132,8 @@ export {
   insertBodega,
   updateBodegaApi,
   deleteBodegaApi,
+  recubicarBodegaPrioridadApi,
   // Categorías
   getCategories,
 };
+

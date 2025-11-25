@@ -12,17 +12,42 @@ import {
 } from "react-native";
 import { useApp } from "../../store";
 import Tablero from "../../components/Tablero/Tablero";
+import { recubicarBodegaPrioridadApi } from "../../features/api";
+
+
 
 export default function BodegaFormScreen(props) {
   const { route, navigation } = props;
-  const { saveBodega } = useApp();
+
+  // sacamos todo de useApp en una sola llamada
+  const { bodegas, items, saveBodega } = useApp();
 
   const editingBodega = route?.params?.bodega || null;
   const isEdit = !!editingBodega;
 
+  // id de bodega que viene por params (por si la pantalla se abrió así)
+  const bodegaIdParam = route?.params?.bodegaId ?? null;
+
+  // id “actual” de la bodega: si estamos editando, usamos el de editingBodega
+  const currentBodegaId = editingBodega?.id ?? bodegaIdParam;
+
+  // bodega que usaremos como referencia
+  const bodega =
+    bodegas.find((b) => b.id === currentBodegaId) || editingBodega || null;
+
+  // loading del botón de recubicaje
+  const [loadingReorden, setLoadingReorden] = useState(false);
+
+  // ítems que pertenecen a esta bodega
+  const itemsDeLaBodega = items.filter(
+    (it) => it.bodegaId === (bodega?.id ?? currentBodegaId)
+  );
+
   const [nombre, setNombre] = useState(editingBodega?.nombre || "");
   const [ciudad, setCiudad] = useState(editingBodega?.ciudad || "");
-  const [direccion, setDireccion] = useState(editingBodega?.direccion || "");
+  const [direccion, setDireccion] = useState(
+    editingBodega?.direccion || ""
+  );
   const [ancho, setAncho] = useState(
     editingBodega?.ancho != null ? String(editingBodega.ancho) : ""
   );
@@ -39,11 +64,6 @@ export default function BodegaFormScreen(props) {
 
   // 🟦 Estado para el mapa del Tablero
   const [gridMap, setGridMap] = useState(() => {
-    // Intentamos leer desde lo que venga en la bodega (editar)
-    // Orden de prioridad:
-    // 1) bodega.layout.mapa_json (store normalizado)
-    // 2) layout_mapa_json (string u objeto crudo desde API)
-    // 3) mapa_json suelto
     const raw =
       editingBodega?.layout?.mapa_json ||
       editingBodega?.layout_mapa_json ||
@@ -61,6 +81,46 @@ export default function BodegaFormScreen(props) {
       return {};
     }
   });
+
+  // 🔹 Handler para recubicar por prioridad
+  const handleReordenarPorPrioridad = async () => {
+    if (!bodega) {
+      Alert.alert("Error", "No se encontró la bodega en memoria");
+      return;
+    }
+
+    if (!itemsDeLaBodega.length) {
+      Alert.alert("Aviso", "Esta bodega no tiene ítems para recubicar.");
+      return;
+    }
+
+    const payload = {
+      items: itemsDeLaBodega.map((it) => ({
+        id_item: it.id_item ?? it.id, // ajusta según cómo guardas el id del item
+        prioridad: 1,                 // luego podremos hacer que esto sea configurable
+      })),
+    };
+
+    setLoadingReorden(true);
+    const res = await recubicarBodegaPrioridadApi(bodega.id, payload);
+    setLoadingReorden(false);
+
+    if (res.error) {
+      Alert.alert("Error", "No se pudo recubicar la bodega");
+      return;
+    }
+
+    const mensaje = res.body?.mensaje || "Recubicación completada";
+    Alert.alert("OK", mensaje);
+  };
+
+
+
+
+
+
+  
+
 
   useEffect(() => {
     if (isEdit) {
@@ -279,21 +339,39 @@ export default function BodegaFormScreen(props) {
       </ScrollView>
 
       {/* Bottom bar acciones */}
+            {/* Bottom bar acciones */}
       <View style={st.bottomBar}>
+        {/* Botón cancelar */}
         <TouchableOpacity
           style={[st.bottomBtn, st.bottomBtnSecondary]}
           onPress={goBack}
-          disabled={saving}
+          disabled={saving || loadingReorden}
         >
           <Text style={[st.bottomBtnText, st.bottomBtnTextSecondary]}>
             Cancelar
           </Text>
         </TouchableOpacity>
 
+        {/* 🟪 Botón reordenar por prioridad */}
+        <TouchableOpacity
+          style={[
+            st.bottomBtn,
+            st.bottomBtnSecondary,
+            { backgroundColor: "#6366f1" },
+          ]}
+          onPress={handleReordenarPorPrioridad}
+          disabled={saving || loadingReorden}
+        >
+          <Text style={st.bottomBtnText}>
+            {loadingReorden ? "Reordenando..." : "Reordenar por prioridad"}
+          </Text>
+        </TouchableOpacity>
+
+        {/* Botón guardar */}
         <TouchableOpacity
           style={[st.bottomBtn, st.bottomBtnPrimary]}
           onPress={handleSave}
-          disabled={saving}
+          disabled={saving || loadingReorden}
         >
           <Text style={st.bottomBtnText}>
             {saving
@@ -304,6 +382,7 @@ export default function BodegaFormScreen(props) {
           </Text>
         </TouchableOpacity>
       </View>
+
     </View>
   );
 }

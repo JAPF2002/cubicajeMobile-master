@@ -1,12 +1,24 @@
-// src/features/bodega3d/Bodega3DScreen.js
-
-import React from "react";
-import { View, StyleSheet } from "react-native";
+// cubicajeMobile-master/src/features/bodega3d/Bodega3DScreen.js
+import React, { useRef, useState } from "react";
+import { View, StyleSheet, Alert } from "react-native";
 import { WebView } from "react-native-webview";
 import { useApp } from "../../store";
+import BodegaItemsList from "./BodegaItemsList";
+import { recubicarBodegaPrioridadApi } from "../api";
 
 export default function Bodega3DScreen({ route }) {
-  const { bodegas, items } = useApp();
+  const { bodegas, items, syncBodegasFromApi } = useApp();
+
+  // estados para prioridad
+  const [prioritySelection, setPrioritySelection] = useState({});
+  const [loadingReorden, setLoadingReorden] = useState(false);
+
+  // para refrescar el WebView cuando cambien datos
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  // ya los que tenías
+  const webviewRef = useRef(null);
+  const [selectedItemName, setSelectedItemName] = useState(null);
 
   // Se espera que venga bodegaId en los params
   const { bodegaId, nombre, ancho, alto, largo, layout: layoutParam } =
@@ -20,39 +32,17 @@ export default function Bodega3DScreen({ route }) {
   const bl = Number(bodega?.largo ?? largo) || 10;
   const bName = bodega?.nombre || nombre || "Bodega";
 
-  // 👉 Layout de la bodega (mapeo D / B / O)
+  // Layout de la bodega (mapeo D / B / O)
   const layout = bodega?.layout || layoutParam || null;
   const layoutAncho = Number(layout?.ancho ?? bw) || 0;
   const layoutLargo = Number(layout?.largo ?? bl) || 0;
-
-  // Aseguramos que mapa_json sea un OBJETO, aunque venga como string
-  let layoutMapa = {};
-  const rawMapa = layout?.mapa_json;
-
-  if (rawMapa) {
-    if (typeof rawMapa === "string") {
-      try {
-        layoutMapa = JSON.parse(rawMapa);
-      } catch (e) {
-        console.log("[Bodega3DScreen] error parse layout.mapa_json:", e);
-        layoutMapa = {};
-      }
-    } else {
-      layoutMapa = rawMapa;
-    }
-  }
-
-  console.log("[Bodega3DScreen] bodega:", bodegaId, bodega);
-  console.log("[Bodega3DScreen] layout usado:", {
-    ancho: layoutAncho,
-    largo: layoutLargo,
-    mapa_json: layoutMapa,
-  });
+  const layoutMapa = layout?.mapa_json || {};
 
   // Ítems dentro de esta bodega
   const itemsInBodega = items
     .filter((it) => it.bodegaId === (bodega?.id ?? bodegaId))
     .map((it) => ({
+      id_item: it.id_item ?? it.id, // importante para el recubicaje
       nombre: it.nombre,
       w: Number(it.ancho) || 1,
       h: Number(it.alto) || 1,
@@ -62,7 +52,109 @@ export default function Bodega3DScreen({ route }) {
           ? parseInt(it.cantidad, 10)
           : 1,
       clase: it.clase || "",
+      categoriaId: it.id_categoria ?? null,
     }));
+
+  // 👉 llamar al backend para recubicar por prioridad
+  const handleReordenarPorPrioridad = async () => {
+    if (!bodega) {
+      Alert.alert("Error", "No se encontró la bodega en memoria.");
+      return;
+    }
+
+    const idsSeleccionados = Object.keys(prioritySelection);
+    if (!idsSeleccionados.length) {
+      Alert.alert("Aviso", "Primero selecciona al menos un ítem para priorizar.");
+      return;
+    }
+
+    const payload = {
+      items: idsSeleccionados.map((idStr) => ({
+        id_item: Number(idStr),
+        prioridad: prioritySelection[idStr],
+      })),
+    };
+
+    try {
+      setLoadingReorden(true);
+      const res = await recubicarBodegaPrioridadApi(bodega.id, payload);
+
+      if (res.error) {
+        console.log("[Bodega3DScreen] recubicar error:", res);
+        Alert.alert(
+          "Error",
+          res.body?.message || "No se pudo recubicar la bodega."
+        );
+        setLoadingReorden(false);
+        return;
+      }
+
+      const mensaje =
+        res.body?.mensaje || "Recubicación por prioridad completada.";
+      Alert.alert("OK", mensaje);
+
+      // 🔄 refrescamos bodegas desde el backend
+      try {
+        await syncBodegasFromApi?.();
+      } catch (e) {
+        console.log("[Bodega3DScreen] error al refrescar bodegas:", e);
+      }
+
+      // 🔄 forzamos que el WebView se remonte (por si cambia layout u otros datos)
+      setRefreshKey((k) => k + 1);
+
+      // opcional: limpiar prioridades después de recubicar
+      setPrioritySelection({});
+
+      setLoadingReorden(false);
+    } catch (e) {
+      setLoadingReorden(false);
+      console.log("[Bodega3DScreen] recubicar excepción:", e);
+      Alert.alert("Error", "Hubo un problema de conexión al recubicar.");
+    }
+  };
+
+  const handleSelectItem = (nombreItem) => {
+    setSelectedItemName((prevName) => {
+      // si ya estaba seleccionado, lo deseleccionamos
+      const newName = prevName === nombreItem ? null : nombreItem;
+
+      if (webviewRef.current) {
+        webviewRef.current.postMessage(
+          JSON.stringify({ type: "selectItem", nombre: newName })
+        );
+      }
+
+      return newName;
+    });
+  };
+
+// 🔁 recibe directamente id_item
+const handleTogglePriority = (id_item) => {
+  console.log("[Bodega3DScreen] toggle prioridad para id_item =", id_item);
+
+  setPrioritySelection((prev) => {
+    const current = prev[id_item] ?? 0;
+    let next;
+
+    // 👉 ciclo 0 → 1 → 2 → 3 → 0
+    if (current === 0) next = 1;        // sin prio -> baja (1)
+    else if (current === 1) next = 2;   // 1 -> 2
+    else if (current === 2) next = 3;   // 2 -> 3
+    else next = 0;                      // 3 -> sin prio
+
+    const copy = { ...prev };
+    if (next === 0) {
+      delete copy[id_item];             // quitar del mapa cuando vuelve a 0
+    } else {
+      copy[id_item] = next;
+    }
+
+    console.log("[Bodega3DScreen] prioritySelection actualizado:", copy);
+    return copy;
+  });
+};
+
 
   // Serializamos a JSON seguro para incrustar en el HTML
   const itemsJson = JSON.stringify(itemsInBodega).replace(/</g, "\\u003c");
@@ -91,7 +183,7 @@ export default function Bodega3DScreen({ route }) {
             width: 100%;
             height: 100%;
             overflow: hidden;
-            background: #020817; /* azul muy oscuro */
+            background: #020817;
           }
           #label {
             position: absolute;
@@ -130,6 +222,21 @@ export default function Bodega3DScreen({ route }) {
             var items = ${itemsJson};
             var layoutData = ${layoutJson};
 
+            // Nombre del item seleccionado desde React Native
+            var highlightedName = null;
+
+            function handleMessageFromRN(event) {
+              try {
+                var msg = JSON.parse(event.data);
+                if (msg.type === "selectItem") {
+                  highlightedName = msg.nombre || null;
+                }
+              } catch (e) {}
+            }
+
+            document.addEventListener("message", handleMessageFromRN);
+            window.addEventListener("message", handleMessageFromRN);
+
             function resize() {
               var dpr = window.devicePixelRatio || 1;
               var rect = canvas.getBoundingClientRect();
@@ -140,23 +247,19 @@ export default function Bodega3DScreen({ route }) {
             window.addEventListener('resize', resize);
             resize();
 
-            // Escala para que TODO quepa (bodega + cajas)
             var maxDim = Math.max(${bw}, ${bh}, ${bl}) || 1;
-            var target = Math.min(window.innerWidth, window.innerHeight) * 0.42;
+            var target = Math.min(window.innerWidth, window.innerHeight) * 0.75;
             var scale = target / maxDim;
 
             var halfX = (${bw} * scale) / 2;
             var halfY = (${bh} * scale) / 2;
             var halfZ = (${bl} * scale) / 2;
 
-            /* ------- Vértices bodega ------- */
             var bodegaVerts = [
-              // base inferior
               {x:-halfX,y:-halfY,z:-halfZ},
               {x: halfX,y:-halfY,z:-halfZ},
               {x: halfX,y:-halfY,z: halfZ},
               {x:-halfX,y:-halfY,z: halfZ},
-              // base superior
               {x:-halfX,y: halfY,z:-halfZ},
               {x: halfX,y: halfY,z:-halfZ},
               {x: halfX,y: halfY,z: halfZ},
@@ -169,70 +272,6 @@ export default function Bodega3DScreen({ route }) {
               [0,4],[1,5],[2,6],[3,7]
             ];
 
-            /* ------- Layout de celdas del piso (D / B / O) ------- */
-            function drawFloorCells() {
-              if (!layoutData || !layoutData.ancho || !layoutData.largo) return;
-
-              var gW = layoutData.ancho;
-              var gL = layoutData.largo;
-              var mapa = layoutData.mapa || {};
-
-              // Cada celda ocupa un pedazo del ancho/largo total de la bodega
-              var cellWorldW = ((${bw} * scale) / gW);
-              var cellWorldL = ((${bl} * scale) / gL);
-
-              for (var index = 0; index < gW * gL; index++) {
-                var estado = mapa[index] ?? mapa[String(index)] ?? "D";
-
-                var gx = index % gW;
-                var gz = Math.floor(index / gW);
-
-                var centerX = -halfX + cellWorldW * (gx + 0.5);
-                var centerZ = -halfZ + cellWorldL * (gz + 0.5);
-                var y = -halfY; // piso
-
-                var hw = cellWorldW / 2;
-                var hl = cellWorldL / 2;
-
-                var color;
-                if (estado === "B") {
-                  color = "rgba(239,68,68,0.55)"; // rojo bloqueado
-                } else if (estado === "O") {
-                  color = "rgba(234,179,8,0.55)"; // amarillo ocupado
-                } else {
-                  color = "rgba(34,197,94,0.35)"; // verde disponible
-                }
-
-                var p0 = project({x:centerX - hw, y:y, z:centerZ - hl});
-                var p1 = project({x:centerX + hw, y:y, z:centerZ - hl});
-                var p2 = project({x:centerX + hw, y:y, z:centerZ + hl});
-                var p3 = project({x:centerX - hw, y:y, z:centerZ + hl});
-
-                ctx.beginPath();
-                ctx.moveTo(p0.x, p0.y);
-                ctx.lineTo(p1.x, p1.y);
-                ctx.lineTo(p2.x, p2.y);
-                ctx.lineTo(p3.x, p3.y);
-                ctx.closePath();
-
-                ctx.fillStyle = color;
-                ctx.fill();
-
-                ctx.strokeStyle = "rgba(15,23,42,0.9)";
-                ctx.lineWidth = 0.6;
-                ctx.stroke();
-
-                // 👉 LETRA EN EL CENTRO (D / B / O)
-                var centerProj = project({x: centerX, y: y + 0.01, z: centerZ});
-                ctx.fillStyle = "#e5e7eb";
-                ctx.font = "10px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
-                ctx.textAlign = "center";
-                ctx.textBaseline = "middle";
-                ctx.fillText(estado, centerProj.x, centerProj.y);
-              }
-            }
-
-            /* ------- Layout de ítems dentro de la bodega ------- */
             function buildItemBoxes() {
               var boxes = [];
               if (!items || !items.length) return boxes;
@@ -242,7 +281,7 @@ export default function Bodega3DScreen({ route }) {
 
               var cursorX = originX;
               var cursorZ = originZ;
-              var layerY = -halfY; // piso
+              var layerY = -halfY;
               var rowDepth = 0;
 
               items.forEach(function(it, idx) {
@@ -252,25 +291,21 @@ export default function Bodega3DScreen({ route }) {
                 var count = it.cantidad || 1;
 
                 for (var n = 0; n < count; n++) {
-                  // salto de fila si no cabe en X
                   if (cursorX + w > halfX) {
                     cursorX = originX;
                     cursorZ += rowDepth;
                     rowDepth = 0;
                   }
-                  // nueva capa si no cabe en Z
                   if (cursorZ + l > halfZ) {
                     cursorX = originX;
                     cursorZ = originZ;
-                    layerY += h; // subir capa
+                    layerY += h;
                   }
 
-                  // centro de la caja
                   var cx = cursorX + w / 2;
                   var cy = layerY + h / 2;
                   var cz = cursorZ + l / 2;
 
-                  // guardamos caja
                   boxes.push({
                     nombre: it.nombre,
                     x: cx,
@@ -279,7 +314,8 @@ export default function Bodega3DScreen({ route }) {
                     w: w,
                     h: h,
                     l: l,
-                    colorIndex: idx
+                    colorIndex: idx,
+                    categoryId: it.categoriaId != null ? it.categoriaId : null,
                   });
 
                   cursorX += w;
@@ -292,13 +328,10 @@ export default function Bodega3DScreen({ route }) {
 
             var itemBoxes = buildItemBoxes();
 
-            /* ------- Cámara / interacción ------- */
-
             var angleX = 0.6;
             var angleY = -0.7;
-
-            var zoom = 1.4;
-            var baseDist = maxDim * scale * 3;
+            var zoom = 1.6;
+            var baseDist = maxDim * scale * 2.2;
             function clampZoom(z) {
               return Math.max(0.4, Math.min(5, z));
             }
@@ -429,7 +462,7 @@ export default function Bodega3DScreen({ route }) {
               for (var y = 0; y <= h; y += step) {
                 ctx.beginPath();
                 ctx.moveTo(0, y);
-                ctx.lineTo(w, y);
+                ctx.lineTo(w, h);
                 ctx.stroke();
               }
               ctx.restore();
@@ -443,19 +476,19 @@ export default function Bodega3DScreen({ route }) {
 
               ctx.lineWidth = 2;
 
-              ctx.strokeStyle = "#ef4444"; // X
+              ctx.strokeStyle = "#ef4444";
               ctx.beginPath();
               ctx.moveTo(origin.x, origin.y);
               ctx.lineTo(xAxis.x, xAxis.y);
               ctx.stroke();
 
-              ctx.strokeStyle = "#22c55e"; // Y
+              ctx.strokeStyle = "#22c55e";
               ctx.beginPath();
               ctx.moveTo(origin.x, origin.y);
               ctx.lineTo(yAxis.x, yAxis.y);
               ctx.stroke();
 
-              ctx.strokeStyle = "#3b82f6"; // Z
+              ctx.strokeStyle = "#3b82f6";
               ctx.beginPath();
               ctx.moveTo(origin.x, origin.y);
               ctx.lineTo(zAxis.x, zAxis.y);
@@ -476,46 +509,157 @@ export default function Bodega3DScreen({ route }) {
               });
             }
 
+            function drawFloorCells() {
+              if (!layoutData || !layoutData.ancho || !layoutData.largo) return;
+              var gW = layoutData.ancho;
+              var gL = layoutData.largo;
+              var mapa = layoutData.mapa || {};
+
+              var cellWorldW = ((${bw} * scale) / gW);
+              var cellWorldL = ((${bl} * scale) / gL);
+
+              for (var index = 0; index < gW * gL; index++) {
+                var estado = mapa[index] ?? mapa[String(index)] ?? "D";
+
+                var gx = index % gW;
+                var gz = Math.floor(index / gW);
+
+                var centerX = -halfX + cellWorldW * (gx + 0.5);
+                var centerZ = -halfZ + cellWorldL * (gz + 0.5);
+                var y = -halfY;
+
+                var hw = cellWorldW / 2;
+                var hl = cellWorldL / 2;
+
+                var color;
+                if (estado === "B") {
+                  color = "rgba(239,68,68,0.55)";
+                } else if (estado === "O") {
+                  color = "rgba(234,179,8,0.55)";
+                } else {
+                  color = "rgba(34,197,94,0.35)";
+                }
+
+                var p0 = project({x:centerX - hw, y:y, z:centerZ - hl});
+                var p1 = project({x:centerX + hw, y:y, z:centerZ - hl});
+                var p2 = project({x:centerX + hw, y:y, z:centerZ + hl});
+                var p3 = project({x:centerX - hw, y:y, z:centerZ + hl});
+
+                ctx.beginPath();
+                ctx.moveTo(p0.x, p0.y);
+                ctx.lineTo(p1.x, p1.y);
+                ctx.lineTo(p2.x, p2.y);
+                ctx.lineTo(p3.x, p3.y);
+                ctx.closePath();
+
+                ctx.fillStyle = color;
+                ctx.fill();
+
+                ctx.strokeStyle = "rgba(15,23,42,0.9)";
+                ctx.lineWidth = 0.6;
+                ctx.stroke();
+
+                var centerProj = project({x: centerX, y: y + 0.01, z: centerZ});
+                ctx.fillStyle = "#e5e7eb";
+                ctx.font = "10px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText(estado, centerProj.x, centerProj.y);
+              }
+            }
+
+            var ITEM_PALETTE = [
+              { fill: "rgba(59,130,246,0.55)", stroke: "rgba(37,99,235,1)" },
+              { fill: "rgba(234,179,8,0.55)", stroke: "rgba(202,138,4,1)" },
+              { fill: "rgba(168,85,247,0.55)", stroke: "rgba(126,34,206,1)" },
+            ];
+
+            function getColorsForBox(box) {
+              var idx = 0;
+              if (box.categoryId != null) {
+                idx = ((box.categoryId - 1) % 3 + 3) % 3;
+              } else {
+                idx = (box.colorIndex || 0) % 3;
+              }
+              return ITEM_PALETTE[idx];
+            }
+
             function drawItems() {
               if (!itemBoxes.length) return;
 
-              itemBoxes.forEach(function(box) {
+              var totalHeight = ${bh} * scale;
+
+              itemBoxes.forEach(function (box) {
                 var hw = box.w / 2;
                 var hh = box.h / 2;
                 var hl = box.l / 2;
 
                 var v = [
-                  {x: box.x - hw, y: box.y - hh, z: box.z - hl},
-                  {x: box.x + hw, y: box.y - hh, z: box.z - hl},
-                  {x: box.x + hw, y: box.y - hh, z: box.z + hl},
-                  {x: box.x - hw, y: box.y - hh, z: box.z + hl},
-                  {x: box.x - hw, y: box.y + hh, z: box.z - hl},
-                  {x: box.x + hw, y: box.y + hh, z: box.z - hl},
-                  {x: box.x + hw, y: box.y + hh, z: box.z + hl},
-                  {x: box.x - hw, y: box.y + hh, z: box.z + hl},
-                ];
-
-                var edges = [
-                  [0,1],[1,2],[2,3],[3,0],
-                  [4,5],[5,6],[6,7],[7,4],
-                  [0,4],[1,5],[2,6],[3,7]
+                  { x: box.x - hw, y: box.y - hh, z: box.z - hl },
+                  { x: box.x + hw, y: box.y - hh, z: box.z - hl },
+                  { x: box.x + hw, y: box.y - hh, z: box.z + hl },
+                  { x: box.x - hw, y: box.y - hh, z: box.z + hl },
+                  { x: box.x - hw, y: box.y + hh, z: box.z - hl },
+                  { x: box.x + hw, y: box.y + hh, z: box.z - hl },
+                  { x: box.x + hw, y: box.y + hh, z: box.z + hl },
+                  { x: box.x - hw, y: box.y + hh, z: box.z + hl },
                 ];
 
                 var pts = v.map(project);
 
-                // Color por itemIndex (simple)
-                var hue = (box.colorIndex * 57) % 360;
-                ctx.strokeStyle = "hsl(" + hue + ", 80%, 60%)";
-                ctx.lineWidth = 1.5;
+                var faces = [
+                  [4, 5, 6, 7],
+                  [0, 1, 2, 3],
+                  [0, 1, 5, 4],
+                  [1, 2, 6, 5],
+                  [2, 3, 7, 6],
+                  [3, 0, 4, 7],
+                ];
 
-                edges.forEach(function(e) {
-                  var a = pts[e[0]];
-                  var b = pts[e[1]];
+                var colors = getColorsForBox(box);
+                var fillColor = colors.fill;
+                var strokeColor = colors.stroke;
+
+                var isHighlighted =
+                  highlightedName && box.nombre === highlightedName;
+
+                if (isHighlighted) {
+                  fillColor = "rgba(250,250,250,0.12)";
+                  strokeColor = "#facc15";
+                  ctx.lineWidth = 2;
+                } else {
+                  ctx.lineWidth = 1;
+                }
+
+                faces.forEach(function (face) {
+                  var p0 = pts[face[0]];
                   ctx.beginPath();
-                  ctx.moveTo(a.x, a.y);
-                  ctx.lineTo(b.x, b.y);
+                  ctx.moveTo(p0.x, p0.y);
+                  for (var i = 1; i < face.length; i++) {
+                    var pi = pts[face[i]];
+                    ctx.lineTo(pi.x, pi.y);
+                  }
+                  ctx.closePath();
+                  ctx.fillStyle = fillColor;
+                  ctx.fill();
+                  ctx.strokeStyle = strokeColor;
                   ctx.stroke();
                 });
+
+                if (box.h < totalHeight * 0.95) {
+                  var topCenter = project({
+                    x: box.x,
+                    y: box.y + hh,
+                    z: box.z,
+                  });
+
+                  ctx.fillStyle = "#e5e7eb";
+                  ctx.font =
+                    "10px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
+                  ctx.textAlign = "center";
+                  ctx.textBaseline = "bottom";
+                  ctx.fillText("A", topCenter.x, topCenter.y - 4);
+                }
               });
             }
 
@@ -531,7 +675,7 @@ export default function Bodega3DScreen({ route }) {
               drawGrid();
               drawAxes();
               drawBodega();
-              drawFloorCells(); // 👈 aquí se ve el MAPE0 (D/B/O) con letras
+              drawFloorCells();
               drawItems();
 
               requestAnimationFrame(render);
@@ -547,6 +691,8 @@ export default function Bodega3DScreen({ route }) {
   return (
     <View style={styles.container}>
       <WebView
+        key={refreshKey}   // 👈 fuerza remount cuando cambie
+        ref={webviewRef}
         originWhitelist={["*"]}
         source={{ html }}
         javaScriptEnabled
@@ -554,6 +700,16 @@ export default function Bodega3DScreen({ route }) {
         mixedContentMode="always"
         androidHardwareAccelerationDisabled={false}
         style={styles.webview}
+      />
+
+      <BodegaItemsList
+        items={itemsInBodega}
+        selectedItemName={selectedItemName}
+        onSelectItem={handleSelectItem}
+        prioritySelection={prioritySelection}
+        onTogglePriority={handleTogglePriority}
+        onApplyRecubicaje={handleReordenarPorPrioridad}
+        loadingReorden={loadingReorden}
       />
     </View>
   );

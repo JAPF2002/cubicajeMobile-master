@@ -16,16 +16,28 @@ import { getCategories } from "../../features/api";
 
 // ---------- Categorías y productos permitidos (solo sugerencias de productos) ----------
 const PRODUCTOS_POR_CATEGORIA = {
+  "Cintas Transportadoras": [
+    "Cinta transportadora PU 1.5mm",
+    "Cinta transportadora caucho antideslizante",
+    "Cinta modular plástica",
+    "Cinta transportadora grado alimenticio",
+  ],
+
   "Mallas Metálicas Inoxidables": [
     "Malla acero inoxidable 304",
     "Malla acero inoxidable 316",
     "Malla galvanizada",
+    "Malla inox microperforada",
+    "Malla electrosoldada inoxidable",
   ],
-  "Telas Nylon": ["Tela nylon monofilamento", "Tela polyester monofilamento"],
-  "Uniones para Empalmes Mecánicos": ["Unión de gancho", "Unión bisagra"],
-  "Polietileno y PVC": ["Malla plástica", "Malla PVC reforzada"],
-  "Otros": ["Producto genérico"],
+
+  "Planchas de Acero Perforadas": [
+    "Plancha acero perforada A-37",
+    "Plancha acero perforada AISI-304",
+    "Plancha acero perforada ranurada",
+  ],
 };
+
 
 export default function ItemFormScreen(props) {
   const { goToMenu, goToItemsList, item: propItem, navigation, route } = props;

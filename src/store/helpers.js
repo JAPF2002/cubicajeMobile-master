@@ -1,4 +1,4 @@
-// src/store/helpers.js
+// C:\Users\japf2\Desktop\Tesis Cubicaje\Proyecto\proyectoPrincipal\cubicajeMobile-master\src\store\helpers.js
 
 // Volumen en m³ (acepta string o número)
 export function vol(ancho, alto, largo) {

@@ -6,6 +6,9 @@ const axiosInstance = axios.create();
 
 async function reqHelper(url, method, body) {
   try {
+    console.log("[reqHelper] REQUEST =>", (method || "get").toUpperCase(), url); // ✅ AÑADIR
+    // console.log("[reqHelper] PAYLOAD =>", body); // ✅ opcional si quieres ver body
+
     const { data } = await axiosInstance({
       url,
       method: (method || "get").toUpperCase(),
@@ -16,24 +19,16 @@ async function reqHelper(url, method, body) {
       data: body,
     });
 
-    // La API ya responde con { error, status, body }
     return data;
   } catch (error) {
-    // Normalizamos el error al mismo formato
     const status = error.response?.status || 500;
-    const message =
-      error.response?.data?.body ||
-      error.message ||
-      "Error de conexión";
+    const message = error.response?.data?.body || error.message || "Error de conexión";
 
-    console.log("[reqHelper] ERROR:", status, message);
+    console.log("[reqHelper] ERROR:", status, "URL:", url, "METHOD:", (method || "get").toUpperCase(), "MSG:", message); // ✅ CAMBIAR
 
-    return {
-      error: true,
-      status,
-      body: message,
-    };
+    return { error: true, status, body: message };
   }
 }
+
 
 export default reqHelper;

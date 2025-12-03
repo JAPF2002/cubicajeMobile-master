@@ -1,194 +1,246 @@
-// cubicajeMobile-master/src/features/bodega3d/BodegaItemsList.js
+/* cubicajeMobile-master/src/features/bodega3d/BodegaItemsList.js */
+
 import React from "react";
 import {
   View,
   Text,
-  FlatList,
-  TouchableOpacity,
   StyleSheet,
+  Pressable,
+  ActivityIndicator,
+  FlatList,
 } from "react-native";
+
+function PriorityBadge({ value }) {
+  const label = value ? `Prio ${value}` : "Sin prio";
+  return (
+    <View style={styles.badge}>
+      <Text style={styles.badgeText}>{label}</Text>
+    </View>
+  );
+}
+
+function ItemRow({ item, selected, priority, onSelect, onTogglePriority }) {
+  return (
+    <Pressable
+      onPress={() => onSelect(item.nombre)}
+      style={[styles.row, selected && styles.rowSelected]}
+    >
+      <View style={{ flex: 1 }}>
+        <Text style={styles.title}>
+          {item.nombre} <Text style={styles.muted}>x{item.cantidad}</Text>
+        </Text>
+
+        <Text style={styles.sub}>
+          {item.w}×{item.l}×{item.h} m • {item.clase || "N/D"} • Cat{" "}
+          {item.categoriaId ?? "-"}
+        </Text>
+      </View>
+
+      <Pressable onPress={() => onTogglePriority(item.id_item)} style={styles.prioBtn}>
+        <PriorityBadge value={priority} />
+      </Pressable>
+    </Pressable>
+  );
+}
 
 export default function BodegaItemsList({
   items,
   selectedItemName,
   onSelectItem,
-  prioritySelection = {},
+  prioritySelection,
   onTogglePriority,
   onApplyRecubicaje,
   loadingReorden,
+
+  // ✅ Parte 12
+  onPreviewCompactacion,
+  onEjecutarCompactacion,
+  movsPreview,
+  loadingTetris,
 }) {
-  // si quieres debug, deja estos logs; si no, puedes borrarlos
-  console.log("[BodegaItemsList] items:", items);
-  console.log("[BodegaItemsList] prioritySelection:", prioritySelection);
+  const preview = Array.isArray(movsPreview) ? movsPreview : [];
 
-  const renderPriorityLabel = (id_item) => {
-    const prio = prioritySelection[id_item] ?? 0;
-    let text = "Sin prio";
-    let style = styles.prioNone;
-
-    if (prio === 3) {
-      text = "Prio 3 (alta)";
-      style = styles.prioHigh;
-    } else if (prio === 2) {
-      text = "Prio 2 (media)";
-      style = styles.prioMedium;
-    } else if (prio === 1) {
-      text = "Prio 1 (baja)";
-      style = styles.prioLow;
-    }
-
-    return (
-      <TouchableOpacity
-        onPress={() => {
-          onTogglePriority && onTogglePriority(id_item);
-        }}
-        style={[styles.prioBadge, style]}
-      >
-        <Text style={styles.prioBadgeText}>{text}</Text>
-      </TouchableOpacity>
-    );
-  };
+  const disabled = !!(loadingReorden || loadingTetris);
 
   return (
-    <View style={styles.listContainer}>
-      <Text style={styles.listTitle}>Ítems en esta bodega</Text>
+    <View style={styles.container}>
+      <Text style={styles.header}>Ítems en esta bodega</Text>
 
-      <FlatList
-        data={items}
-        keyExtractor={(item, index) => `${item.id_item}-${index}`}
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.listContent}
-        renderItem={({ item }) => {
-          const isSelected = item.nombre === selectedItemName;
-          return (
-            <View style={styles.itemWrapper}>
-              {/* chip de selección (resalta en 3D) */}
-              <TouchableOpacity
-                onPress={() => onSelectItem && onSelectItem(item.nombre)}
-                style={[
-                  styles.itemChip,
-                  isSelected && styles.itemChipSelected,
-                ]}
-              >
-                <Text style={styles.itemChipText}>{item.nombre}</Text>
-                <Text style={styles.itemChipQty}>x{item.cantidad}</Text>
-              </TouchableOpacity>
-
-              {/* badge de prioridad */}
-              {renderPriorityLabel(item.id_item)}
-            </View>
-          );
-        }}
-      />
-
-      {/* Botón para aplicar recubicaje por prioridad */}
-      <View style={styles.footer}>
-        <TouchableOpacity
-          onPress={onApplyRecubicaje}
-          disabled={loadingReorden}
-          style={[
-            styles.recubicBtn,
-            loadingReorden && styles.recubicBtnDisabled,
-          ]}
-        >
-          <Text style={styles.recubicBtnText}>
-            {loadingReorden ? "Reubicando..." : "Recubicar por prioridad"}
-          </Text>
-        </TouchableOpacity>
+      <View style={styles.listContainer}>
+        <FlatList
+          data={items}
+          keyExtractor={(it) => String(it.id_item)}
+          renderItem={({ item }) => (
+            <ItemRow
+              item={item}
+              selected={selectedItemName === item.nombre}
+              priority={prioritySelection?.[item.id_item] ?? 0}
+              onSelect={onSelectItem}
+              onTogglePriority={onTogglePriority}
+            />
+          )}
+          ItemSeparatorComponent={() => <View style={styles.sep} />}
+          ListEmptyComponent={
+            <Text style={styles.empty}>No hay ítems en esta bodega.</Text>
+          }
+        />
       </View>
+
+      <Pressable
+        onPress={onApplyRecubicaje}
+        disabled={disabled}
+        style={[styles.actionBtn, disabled && styles.actionBtnDisabled]}
+      >
+        {disabled ? (
+          <ActivityIndicator />
+        ) : (
+          <Text style={styles.actionText}>Recubicar por prioridad</Text>
+        )}
+      </Pressable>
+
+      {/* ✅ PARTE 12: Compactación tetris */}
+      <View style={styles.actionsRow}>
+        <Pressable
+          onPress={onPreviewCompactacion}
+          disabled={disabled}
+          style={[styles.secondaryBtn, disabled && styles.actionBtnDisabled]}
+        >
+          {loadingTetris ? (
+            <ActivityIndicator />
+          ) : (
+            <Text style={styles.secondaryText}>Preview compactación</Text>
+          )}
+        </Pressable>
+
+        <Pressable
+          onPress={onEjecutarCompactacion}
+          disabled={disabled}
+          style={[styles.dangerBtn, disabled && styles.actionBtnDisabled]}
+        >
+          {loadingTetris ? (
+            <ActivityIndicator />
+          ) : (
+            <Text style={styles.dangerText}>Ejecutar compactación</Text>
+          )}
+        </Pressable>
+      </View>
+
+      {preview.length > 0 && (
+        <View style={styles.previewBox}>
+          <Text style={styles.previewTitle}>
+            Movimientos (preview): {preview.length}
+          </Text>
+
+          {preview.slice(0, 10).map((m, idx) => (
+            <Text key={idx} style={styles.previewLine}>
+              item {m.id_item}: {m.from_ubicacion} → {m.to_ubicacion} (qty {m.qty})
+            </Text>
+          ))}
+
+          {preview.length > 10 && (
+            <Text style={styles.previewMore}>... mostrando 10</Text>
+          )}
+        </View>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  listContainer: {
+  container: {
+    backgroundColor: "#020817",
+    paddingHorizontal: 12,
     paddingTop: 8,
     paddingBottom: 12,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: "#1f2937",
-    backgroundColor: "#020817",
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.08)",
   },
-  listTitle: {
-    color: "#e5e7eb",
-    fontSize: 12,
-    marginLeft: 12,
-    marginBottom: 4,
-  },
-  listContent: {
-    paddingHorizontal: 8,
-    paddingBottom: 4,
-  },
-  itemWrapper: {
-    alignItems: "center",
-    marginHorizontal: 4,
-  },
-  itemChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 999,
+  header: { color: "#e5e7eb", fontSize: 14, marginBottom: 8, fontWeight: "600" },
+
+  listContainer: {
+    maxHeight: 170,
+    borderRadius: 12,
+    overflow: "hidden",
+    backgroundColor: "rgba(15,23,42,0.6)",
     borderWidth: 1,
-    borderColor: "#374151",
+    borderColor: "rgba(255,255,255,0.08)",
+  },
+
+  row: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#020617",
-  },
-  itemChipSelected: {
-    borderColor: "#facc15",
-    backgroundColor: "#1f2937",
-  },
-  itemChipText: {
-    color: "#e5e7eb",
-    fontSize: 12,
-    marginRight: 6,
-  },
-  itemChipQty: {
-    color: "#9ca3af",
-    fontSize: 11,
-  },
-
-  // prioridad
-  prioBadge: {
-    marginTop: 4,
     paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
+    paddingVertical: 10,
   },
-  prioBadgeText: {
-    fontSize: 10,
-    color: "#e5e7eb",
-  },
-  prioNone: {
-    backgroundColor: "#111827",
-  },
-  prioHigh: {
-    backgroundColor: "#b91c1c",
-  },
-  prioMedium: {
-    backgroundColor: "#ca8a04",
-  },
-  prioLow: {
-    backgroundColor: "#15803d",
+  rowSelected: {
+    backgroundColor: "rgba(250,250,250,0.06)",
   },
 
-  // botón recubicaje
-  footer: {
-    marginTop: 8,
-    paddingHorizontal: 16,
-  },
-  recubicBtn: {
+  title: { color: "#e5e7eb", fontSize: 13, fontWeight: "600" },
+  sub: { color: "rgba(229,231,235,0.75)", fontSize: 11, marginTop: 2 },
+  muted: { color: "rgba(229,231,235,0.65)" },
+
+  sep: { height: 1, backgroundColor: "rgba(255,255,255,0.06)" },
+
+  empty: { color: "rgba(229,231,235,0.75)", padding: 12, fontSize: 12 },
+
+  prioBtn: { marginLeft: 10 },
+  badge: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     borderRadius: 999,
-    paddingVertical: 9,
+    backgroundColor: "rgba(255,255,255,0.08)",
+  },
+  badgeText: { color: "#e5e7eb", fontSize: 11, fontWeight: "600" },
+
+  actionBtn: {
+    marginTop: 10,
+    borderRadius: 12,
+    paddingVertical: 12,
     alignItems: "center",
-    justifyContent: "center",
     backgroundColor: "#22c55e",
   },
-  recubicBtnDisabled: {
-    opacity: 0.6,
+  actionBtnDisabled: { opacity: 0.7 },
+  actionText: { color: "#0b1220", fontWeight: "800" },
+
+  // Parte 12
+  actionsRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 10,
   },
-  recubicBtnText: {
-    fontSize: 13,
-    color: "#022c22",
-    fontWeight: "600",
+  secondaryBtn: {
+    flex: 1,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: "center",
+    backgroundColor: "#3b82f6",
   },
+  secondaryText: { color: "#0b1220", fontWeight: "800" },
+
+  dangerBtn: {
+    flex: 1,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: "center",
+    backgroundColor: "#f59e0b",
+  },
+  dangerText: { color: "#0b1220", fontWeight: "800" },
+
+  previewBox: {
+    marginTop: 10,
+    borderRadius: 12,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    backgroundColor: "rgba(15,23,42,0.6)",
+  },
+  previewTitle: {
+    color: "#e5e7eb",
+    fontSize: 12,
+    fontWeight: "700",
+    marginBottom: 6,
+  },
+  previewLine: { color: "rgba(229,231,235,0.85)", fontSize: 11, marginBottom: 2 },
+  previewMore: { color: "rgba(229,231,235,0.65)", fontSize: 11, marginTop: 4 },
 });

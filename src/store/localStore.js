@@ -1,4 +1,4 @@
-// src/store/localStore.js
+// C:\Users\japf2\Desktop\Tesis Cubicaje\Proyecto\proyectoPrincipal\cubicajeMobile-master\src\store\localStore.js
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const STORAGE_KEY = "@cubicaje/state-v1";

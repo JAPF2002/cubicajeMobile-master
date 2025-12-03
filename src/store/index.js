@@ -1,6 +1,7 @@
-// src/store/index.js
+// C:\Users\japf2\Desktop\Tesis Cubicaje\Proyecto\proyectoPrincipal\cubicajeMobile-master\src\store\index.js
 import React, {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -21,8 +22,10 @@ import {
   insertItem,
   updateItem,
   deleteItemApi,
+  egresarItemQty,
   getCategories,
   moveItemQty,
+  getMovimientos, // ✅ NUEVO
 } from "../features/api";
 
 // --------- Usuarios demo ---------
@@ -47,6 +50,7 @@ const empleadoDemo = {
 const initialState = {
   bodegas: [],
   items: [],
+  movimientos: [], // ✅ NUEVO
   requests: [],
   users: [adminUserDemo, empleadoDemo],
   currentUser: null,
@@ -126,9 +130,10 @@ export function AppProvider({ children }) {
       try {
         console.log("[AppProvider] sincronizando bodegas desde API...");
         await syncBodegasFromApi();
-        // si quieres también categorías / ítems, los llamas acá:
+        // si quieres también categorías / ítems / movimientos:
         // await syncCategoriesFromApi();
         // await reloadItems();
+        // await reloadMovimientos({ limit: 200 });
       } catch (err) {
         console.log("[AppProvider] error sincronizando datos iniciales:", err);
       }
@@ -138,16 +143,21 @@ export function AppProvider({ children }) {
   // ---------- Derivados ----------
 
   // Items agrupados por id_bodega
-  const itemsByBodega = useMemo(() => {
-    const m = new Map();
-    for (const it of state.items) {
-      const key = it.bodegaId || "__ORPHAN__";
-      const arr = m.get(key) || [];
-      arr.push(it);
-      m.set(key, arr);
-    }
-    return m;
-  }, [state.items]);
+const itemsByBodega = useMemo(() => {
+  const m = new Map();
+  for (const it of state.items) {
+    const qty = Math.max(0, Number(it.cantidad ?? 0) || 0);
+
+    if (qty <= 0) continue; // ✅ CAMBIO: si qty=0, “sale” de la bodega (no se muestra)
+
+    const key = it.bodegaId || "__ORPHAN__";
+    const arr = m.get(key) || [];
+    arr.push(it);
+    m.set(key, arr);
+  }
+  return m;
+}, [state.items]);
+
 
   const metricsOf = (bodega) => {
     if (!bodega) {
@@ -163,11 +173,13 @@ export function AppProvider({ children }) {
     const arr = itemsByBodega.get(bodega.id) || [];
     const ocupado = arr.reduce((acc, it) => {
       const v =
-        vol(it.ancho, it.alto, it.largo) * clampInt(it.cantidad || 0, 1);
+        vol(it.ancho, it.alto, it.largo) * Math.max(0, Number(it.cantidad ?? 0) || 0); // ✅ CAMBIO: respeta 0
+
       return acc + (Number.isFinite(v) ? v : 0);
     }, 0);
     const unidades = arr.reduce(
-      (acc, it) => acc + clampInt(it.cantidad || 0, 1),
+      (acc, it) => acc + Math.max(0, Number(it.cantidad ?? 0) || 0), // ✅ CAMBIO: respeta 0
+
       0
     );
     const libre = Math.max(capacidad - ocupado, 0);
@@ -180,6 +192,35 @@ export function AppProvider({ children }) {
       unidades,
     };
   };
+
+  // ---------- MOVIMIENTOS ✅ NUEVO ----------
+
+const reloadMovimientos = useCallback(async (opts = {}) => {
+  const res = await getMovimientos(opts);
+
+  const error = res?.error ?? false;
+  if (error) {
+    throw new Error(String(res?.body?.message || res?.body || "Error obteniendo movimientos"));
+  }
+
+  // Soportar varias formas de respuesta
+  const topBody = res?.body ?? res?.data ?? res;
+
+  let lista = [];
+  if (Array.isArray(topBody)) {
+    lista = topBody;
+  } else if (Array.isArray(topBody?.body)) {
+    lista = topBody.body;
+  }
+
+  setState((prev) => ({
+    ...prev,
+    movimientos: lista,
+  }));
+
+  return lista;
+}, []); // ✅ importante: estabiliza la función
+
 
   // ---------- BODEGAS ----------
 
@@ -322,28 +363,33 @@ export function AppProvider({ children }) {
         const { error, body, message } = normalizeRes(res);
         if (error) throw new Error(message || "Error actualizando bodega");
 
-        setState((prev) => ({
-          ...prev,
-          bodegas: prev.bodegas.map((b) =>
-            b.id === bodega.id ? { ...b, ...bodega } : b
-          ),
-        }));
+setState((prev) => ({
+  ...prev,
+  bodegas: prev.bodegas.map((b) =>
+    b.id === bodega.id ? { ...b, ...bodega } : b
+  ),
+}));
 
-        return body;
+return { ...bodega, id: bodega.id };
+
       } else {
         const res = await insertBodega(payload);
         const { error, body, message } = normalizeRes(res);
         if (error) throw new Error(message || "Error creando bodega");
 
-        const idFromDb = body?.id_bodega ?? body?.id ?? null;
+const idFromDb = body?.id_bodega ?? body?.id ?? null;
 
-        setState((prev) => {
-          const id = idFromDb || nextId(prev.bodegas);
-          const nueva = { ...bodega, id };
-          return { ...prev, bodegas: [...prev.bodegas, nueva] };
-        });
+let nuevaCreada = null;
 
-        return body;
+setState((prev) => {
+  const id = idFromDb || nextId(prev.bodegas);
+  nuevaCreada = { ...bodega, id };
+  return { ...prev, bodegas: [...prev.bodegas, nuevaCreada] };
+});
+
+// ✅ devuelve una bodega con id seguro para navegar al Paso 2
+return nuevaCreada ?? { ...bodega, id: idFromDb };
+
       }
     } catch (err) {
       console.log("[saveBodega] error:", err);
@@ -439,7 +485,8 @@ export function AppProvider({ children }) {
       alto: Number(it.alto ?? 0),
       largo: Number(it.largo ?? 0),
       peso: Number(it.peso ?? 0),
-      cantidad: clampInt(it.cantidad ?? 0, 1),
+      cantidad: Math.max(0, Number(it.cantidad ?? 0) || 0), // ✅ CAMBIO: antes forzaba mínimo 1
+
       bodegaId:
         it.bodegaId ??
         it.id_bodega ??
@@ -455,45 +502,41 @@ export function AppProvider({ children }) {
     }));
   };
 
-  const saveItem = async (payload) => {
-    try {
-      const creating = !payload.id;
+ const saveItem = async (payload) => {
+  try {
+    const creating = !payload.id;
 
-      const body = {
-        id_item: payload.id,
-        nombre: payload.nombre,
-        id_categoria:
-          payload.id_categoria ?? payload.categoriaId ?? null,
-        id_bodega:
-          payload.bodegaId ?? payload.id_bodega ?? null,
-        ancho: Number(payload.ancho ?? 0),
-        largo: Number(payload.largo ?? 0),
-        alto: Number(payload.alto ?? 0),
-        peso: Number(payload.peso ?? 0),
-        cantidad: clampInt(payload.cantidad || 1, 1),
-      };
+    const body = {
+      id_item: payload.id,
+      nombre: payload.nombre,
+      id_categoria: payload.id_categoria ?? payload.categoriaId ?? null,
+      ancho: Number(payload.ancho ?? 0),
+      largo: Number(payload.largo ?? 0),
+      alto: Number(payload.alto ?? 0),
+      peso: Number(payload.peso ?? 0),
+    };
 
-      if (creating) {
-        await insertItem(body);
-      } else {
-        await updateItem(body);
-      }
-
-      await reloadItems();
-      Alert.alert(
-        "Ítem",
-        creating ? "Creado correctamente." : "Actualizado correctamente."
-      );
-    } catch (error) {
-      console.log("[saveItem] ERROR:", error?.message);
-      Alert.alert(
-        "Error",
-        `No se pudo guardar el ítem.\n${
-          error?.message || "Revisa la conexión."
-        }`
-      );
+    // ✅ IMPORTANTE:
+    // Solo al CREAR mandamos stock y bodega (porque el backend hace auto-ubicación real
+    // y deja coherente bodega_ubicacion_items + bodega_items + item_movimientos).
+    if (creating) {
+      body.id_bodega = payload.bodegaId ?? payload.id_bodega ?? null;
+      body.cantidad = Math.max(0, Number(payload.cantidad ?? 0) || 0);
     }
-  };
+
+    if (creating) {
+      await insertItem(body);
+    } else {
+      await updateItem(body);
+    }
+
+    await reloadItems();
+    Alert.alert("Ítem", creating ? "Creado correctamente." : "Actualizado correctamente.");
+  } catch (error) {
+    console.log("[saveItem] ERROR:", error?.message);
+    Alert.alert("Error", `No se pudo guardar el ítem.\n${error?.message || "Revisa la conexión."}`);
+  }
+};
 
   const deleteItem = async (id) => {
     try {
@@ -511,24 +554,50 @@ export function AppProvider({ children }) {
     }
   };
 
-  const moveItemPartial = async ({ id, fromBodegaId, toBodegaId, cantidad }) => {
-    try {
-      await moveItemQty(id, {
-        fromBodegaId,
-        toBodegaId,
-        cantidad,
-      });
-      await reloadItems();
-    } catch (error) {
-      console.log("[moveItemPartial] ERROR:", error?.message);
-      Alert.alert(
-        "Error",
-        `No se pudo mover el ítem.\n${
-          error?.message || "Revisa la conexión."
-        }`
-      );
+// cubicajeMobile-master/src/store/index.js
+
+const moveItemPartial = async ({ id, fromBodegaId, toBodegaId, cantidad }) => {
+  try {
+    const res = await moveItemQty(id, { fromBodegaId, toBodegaId, cantidad });
+
+    if (res?.error) {
+      throw new Error(String(res?.body?.message || res?.body || "Error moviendo item"));
     }
-  };
+
+    await reloadItems();
+    return res;
+  } catch (error) {
+    console.log("[moveItemPartial] ERROR:", error?.message);
+    Alert.alert(
+      "Error",
+      `No se pudo mover el ítem.\n${error?.message || "Revisa la conexión."}`
+    );
+    throw error;
+  }
+};
+
+// ✅ NUEVO: egresar (sacar) unidades reales desde ubicaciones + kardex
+const egresarItemPartial = async ({ id, bodegaId, cantidad }) => {
+  try {
+    if (!bodegaId) throw new Error("Este ítem no tiene bodega origen.");
+    const res = await egresarItemQty(id, { bodegaId, cantidad });
+
+    if (res?.error) {
+      throw new Error(String(res?.body?.message || res?.body || "Error egresando item"));
+    }
+
+    await reloadItems();
+    return res;
+  } catch (error) {
+    console.log("[egresarItemPartial] ERROR:", error?.message);
+    Alert.alert(
+      "Error",
+      `No se pudo sacar unidades.\n${error?.message || "Revisa la conexión."}`
+    );
+    throw error;
+  }
+};
+
 
   // ---------- USUARIOS / AUTH ----------
 
@@ -592,40 +661,45 @@ export function AppProvider({ children }) {
   // ---------- Valor de contexto ----------
 
   const value = useMemo(
-    () => ({
-      // Estado
-      bodegas: state.bodegas,
-      items: state.items,
-      requests: state.requests,
-      users: state.users,
-      currentUser: state.currentUser,
-      categorias: state.categorias,
+  () => ({
+    // Estado
+    bodegas: state.bodegas,
+    items: state.items,
+    movimientos: state.movimientos,
+    requests: state.requests,
+    users: state.users,
+    currentUser: state.currentUser,
+    categorias: state.categorias,
 
-      // Derivados
-      metricsOf,
+    // Derivados
+    metricsOf,
 
-      // Bodegas
-      saveBodega,
-      deleteBodega,
-      setBodegaActive,
-      syncBodegasFromApi,
+    // Movimientos
+    reloadMovimientos,
 
-      // Categorías
-      syncCategoriesFromApi,
+    // Bodegas
+    saveBodega,
+    deleteBodega,
+    setBodegaActive,
+    syncBodegasFromApi,
 
-      // Items
-      saveItem,
-      deleteItem,
-      moveItemPartial,
+    // Categorías
+    syncCategoriesFromApi,
 
-      // Usuarios / auth
-      saveUser,
-      loginAsDemo,
-      loginWithCredentials,
-      logout,
-    }),
-    [state]
-  );
+    // Items
+    saveItem,
+    deleteItem,
+    moveItemPartial,
+    egresarItemPartial,
+
+    // Usuarios / auth
+    saveUser,
+    loginAsDemo,
+    loginWithCredentials,
+    logout,
+  }),
+  [state, reloadMovimientos]
+);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }

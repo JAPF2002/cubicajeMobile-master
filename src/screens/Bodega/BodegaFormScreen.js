@@ -1,5 +1,5 @@
 // src/screens/Bodega/BodegaFormScreen.js
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -11,43 +11,26 @@ import {
   Switch,
 } from "react-native";
 import { useApp } from "../../store";
-import Tablero from "../../components/Tablero/Tablero";
-import { recubicarBodegaPrioridadApi } from "../../features/api";
-
-
 
 export default function BodegaFormScreen(props) {
   const { route, navigation } = props;
 
-  // sacamos todo de useApp en una sola llamada
-  const { bodegas, items, saveBodega } = useApp();
+  const { bodegas, saveBodega } = useApp();
 
   const editingBodega = route?.params?.bodega || null;
   const isEdit = !!editingBodega;
 
-  // id de bodega que viene por params (por si la pantalla se abrió así)
   const bodegaIdParam = route?.params?.bodegaId ?? null;
-
-  // id “actual” de la bodega: si estamos editando, usamos el de editingBodega
   const currentBodegaId = editingBodega?.id ?? bodegaIdParam;
 
-  // bodega que usaremos como referencia
-  const bodega =
-    bodegas.find((b) => b.id === currentBodegaId) || editingBodega || null;
-
-  // loading del botón de recubicaje
-  const [loadingReorden, setLoadingReorden] = useState(false);
-
-  // ítems que pertenecen a esta bodega
-  const itemsDeLaBodega = items.filter(
-    (it) => it.bodegaId === (bodega?.id ?? currentBodegaId)
+  const bodega = useMemo(
+    () => bodegas.find((b) => b.id === currentBodegaId) || editingBodega || null,
+    [bodegas, currentBodegaId, editingBodega]
   );
 
   const [nombre, setNombre] = useState(editingBodega?.nombre || "");
   const [ciudad, setCiudad] = useState(editingBodega?.ciudad || "");
-  const [direccion, setDireccion] = useState(
-    editingBodega?.direccion || ""
-  );
+  const [direccion, setDireccion] = useState(editingBodega?.direccion || "");
   const [ancho, setAncho] = useState(
     editingBodega?.ancho != null ? String(editingBodega.ancho) : ""
   );
@@ -60,116 +43,51 @@ export default function BodegaFormScreen(props) {
   const [active, setActive] = useState(
     editingBodega?.active !== undefined ? !!editingBodega.active : true
   );
+
   const [saving, setSaving] = useState(false);
 
-  // 🟦 Estado para el mapa del Tablero
-  const [gridMap, setGridMap] = useState(() => {
-    const raw =
-      editingBodega?.layout?.mapa_json ||
-      editingBodega?.layout_mapa_json ||
-      editingBodega?.mapa_json ||
-      null;
-
-    if (!raw) return {};
-    try {
-      if (typeof raw === "string") {
-        return JSON.parse(raw);
-      }
-      return raw;
-    } catch (e) {
-      console.log("[BodegaFormScreen] error parse mapa_json inicial:", e);
-      return {};
-    }
-  });
-
-  // 🔹 Handler para recubicar por prioridad
-  const handleReordenarPorPrioridad = async () => {
-    if (!bodega) {
-      Alert.alert("Error", "No se encontró la bodega en memoria");
-      return;
-    }
-
-    if (!itemsDeLaBodega.length) {
-      Alert.alert("Aviso", "Esta bodega no tiene ítems para recubicar.");
-      return;
-    }
-
-    const payload = {
-      items: itemsDeLaBodega.map((it) => ({
-        id_item: it.id_item ?? it.id, // ajusta según cómo guardas el id del item
-        prioridad: 1,                 // luego podremos hacer que esto sea configurable
-      })),
-    };
-
-    setLoadingReorden(true);
-    const res = await recubicarBodegaPrioridadApi(bodega.id, payload);
-    setLoadingReorden(false);
-
-    if (res.error) {
-      Alert.alert("Error", "No se pudo recubicar la bodega");
-      return;
-    }
-
-    const mensaje = res.body?.mensaje || "Recubicación completada";
-    Alert.alert("OK", mensaje);
-  };
-
-
-
-
-
-
-  
-
-
   useEffect(() => {
-    if (isEdit) {
-      navigation?.setOptions?.({ title: "Editar bodega" });
-    } else {
-      navigation?.setOptions?.({ title: "Nueva bodega" });
-    }
+    navigation?.setOptions?.({
+      title: isEdit ? "Editar bodega" : "Nueva bodega",
+    });
   }, [isEdit, navigation]);
 
-  const goBack = () => {
-    if (navigation?.goBack) navigation.goBack();
-  };
+  const goBack = () => navigation?.goBack?.();
 
-  const handleSave = async () => {
-    if (!nombre.trim()) {
-      return Alert.alert("Validación", "Debes ingresar un nombre de bodega.");
-    }
-    if (!ciudad.trim()) {
+  const buildPayloadOrAlert = () => {
+    if (!nombre.trim())
+      return Alert.alert(
+        "Validación",
+        "Debes ingresar un nombre de bodega."
+      );
+    if (!ciudad.trim())
       return Alert.alert("Validación", "Debes ingresar la ciudad.");
-    }
-    if (!direccion.trim()) {
+    if (!direccion.trim())
       return Alert.alert("Validación", "Debes ingresar la dirección.");
-    }
 
     const anchoNum = Number(ancho);
     const largoNum = Number(largo);
     const altoNum = Number(alto);
 
     if (!anchoNum || anchoNum <= 0 || !largoNum || largoNum <= 0) {
-      return Alert.alert(
+      Alert.alert(
         "Validación",
         'Los campos "Ancho" y "Largo" deben ser números mayores a 0.'
       );
+      return null;
     }
     if (!altoNum || altoNum <= 0) {
-      return Alert.alert(
+      Alert.alert(
         "Validación",
         'El campo "Altura" debe ser un número mayor a 0.'
       );
+      return null;
     }
 
-    // 🔹 layout que enviaremos al backend y al store
-    const layout = {
-      ancho: anchoNum,
-      largo: largoNum,
-      mapa_json: gridMap || {}, // objeto { "0":"B", "1":"D", ... }
-    };
+    // 🚫 NO tocamos layout aquí (para no sobreescribir el mapa existente)
+    const keepLayout = bodega?.layout ?? editingBodega?.layout ?? null;
 
-    const bodegaPayload = {
+    return {
       id: editingBodega?.id || null,
       nombre: nombre.trim(),
       ciudad: ciudad.trim(),
@@ -178,12 +96,17 @@ export default function BodegaFormScreen(props) {
       largo: largoNum,
       alto: altoNum,
       active,
-      layout,
+      layout: keepLayout,
     };
+  };
+
+  const handleSaveOnly = async () => {
+    const payload = buildPayloadOrAlert();
+    if (!payload) return;
 
     try {
       setSaving(true);
-      await saveBodega(bodegaPayload);
+      await saveBodega(payload);
       Alert.alert(
         "Éxito",
         isEdit
@@ -192,21 +115,29 @@ export default function BodegaFormScreen(props) {
         [{ text: "OK", onPress: goBack }]
       );
     } catch (err) {
-      console.log("[BodegaFormScreen] error save:", err);
       Alert.alert(
         "Error",
-        err?.message || "No se pudo guardar la bodega. Intenta nuevamente."
+        err?.message || "No se pudo guardar la bodega."
       );
     } finally {
       setSaving(false);
     }
   };
 
-  // números que le pasamos al Tablero
-  const anchoTablero =
-    Number.isFinite(Number(ancho)) && Number(ancho) > 0 ? Number(ancho) : 0;
-  const largoTablero =
-    Number.isFinite(Number(largo)) && Number(largo) > 0 ? Number(largo) : 0;
+  // ✅ AHORA: no guarda, solo navega al Paso 2
+  const handleNextMap = () => {
+    const payload = buildPayloadOrAlert();
+    if (!payload) return;
+
+    // Si ya existe (editar), usamos el id
+    if (payload.id) {
+      navigation.navigate("BodegaMap", { bodegaId: payload.id });
+      return;
+    }
+
+    // Si es nueva, pasamos un borrador sin guardar aún
+    navigation.navigate("BodegaMap", { draftBodega: payload });
+  };
 
   return (
     <View style={st.screen}>
@@ -218,11 +149,10 @@ export default function BodegaFormScreen(props) {
           {isEdit ? "Editar bodega" : "Nueva bodega"}
         </Text>
         <Text style={st.subtitle}>
-          Completa los datos de la bodega y, si quieres, marca el mapa de
-          posiciones donde se pueden acomodar ítems.
+          Paso 1: completa los datos. Luego en el Paso 2 podrás mapear el
+          tablero.
         </Text>
 
-        {/* Nombre */}
         <Text style={st.label}>Nombre de la bodega</Text>
         <TextInput
           style={st.input}
@@ -231,20 +161,14 @@ export default function BodegaFormScreen(props) {
           placeholder="Ej: Bodega Central"
         />
 
-        {/* Ciudad */}
         <Text style={st.label}>Ciudad</Text>
-
-        {/* Botones para escoger ciudad */}
         <View style={st.cityChipsRow}>
           {["Iquique", "Alto Hospicio"].map((city) => {
             const selected = ciudad === city;
             return (
               <TouchableOpacity
                 key={city}
-                style={[
-                  st.cityChip,
-                  selected && st.cityChipSelected,
-                ]}
+                style={[st.cityChip, selected && st.cityChipSelected]}
                 onPress={() => setCiudad(city)}
               >
                 <Text
@@ -260,7 +184,6 @@ export default function BodegaFormScreen(props) {
           })}
         </View>
 
-        {/* También puedes escribir otra ciudad si quieres */}
         <TextInput
           style={st.input}
           value={ciudad}
@@ -268,7 +191,6 @@ export default function BodegaFormScreen(props) {
           placeholder="Ej: Iquique / Alto Hospicio"
         />
 
-        {/* Dirección */}
         <Text style={st.label}>Dirección</Text>
         <TextInput
           style={st.input}
@@ -277,7 +199,6 @@ export default function BodegaFormScreen(props) {
           placeholder="Dirección completa"
         />
 
-        {/* Dimensiones */}
         <View style={st.row}>
           <View style={st.col}>
             <Text style={st.label}>Ancho (m)</Text>
@@ -310,7 +231,6 @@ export default function BodegaFormScreen(props) {
           placeholder="Ej: 4"
         />
 
-        {/* Estado activa/inactiva */}
         <View style={[st.row, { alignItems: "center", marginTop: 12 }]}>
           <Text style={[st.label, { marginBottom: 0 }]}>Bodega activa</Text>
           <Switch
@@ -320,69 +240,46 @@ export default function BodegaFormScreen(props) {
           />
         </View>
 
-        {/* TABLERO con mapa */}
-        <View style={{ marginTop: 20 }}>
-          <Text style={st.label}>Mapa de posiciones (opcional)</Text>
+        <View style={{ marginTop: 16 }}>
           <Text style={st.helpText}>
-            Marca las posiciones disponibles, ocupadas, bloqueadas o con espacio
-            en altura. Este mapa se usará para la vista 3D y el algoritmo de
-            cubicaje.
+            ✅ El mapeo del tablero se hace en el{" "}
+            <Text style={{ fontWeight: "800" }}>Paso 2</Text> para que esta
+            pantalla no quede apretada.
           </Text>
-
-          <Tablero
-            ancho={anchoTablero}
-            largo={largoTablero}
-            mapaInicial={gridMap}
-            onGridMapChange={setGridMap}
-          />
         </View>
       </ScrollView>
 
-      {/* Bottom bar acciones */}
-            {/* Bottom bar acciones */}
       <View style={st.bottomBar}>
-        {/* Botón cancelar */}
         <TouchableOpacity
           style={[st.bottomBtn, st.bottomBtnSecondary]}
           onPress={goBack}
-          disabled={saving || loadingReorden}
+          disabled={saving}
         >
-          <Text style={[st.bottomBtnText, st.bottomBtnTextSecondary]}>
+          <Text
+            style={[st.bottomBtnText, st.bottomBtnTextSecondary]}
+          >
             Cancelar
           </Text>
         </TouchableOpacity>
 
-        {/* 🟪 Botón reordenar por prioridad */}
         <TouchableOpacity
-          style={[
-            st.bottomBtn,
-            st.bottomBtnSecondary,
-            { backgroundColor: "#6366f1" },
-          ]}
-          onPress={handleReordenarPorPrioridad}
-          disabled={saving || loadingReorden}
+          style={[st.bottomBtn, { backgroundColor: "#6366f1" }]}
+          onPress={handleNextMap}
+          disabled={saving}
         >
-          <Text style={st.bottomBtnText}>
-            {loadingReorden ? "Reordenando..." : "Reordenar por prioridad"}
-          </Text>
+          <Text style={st.bottomBtnText}>Siguiente: Mapear</Text>
         </TouchableOpacity>
 
-        {/* Botón guardar */}
         <TouchableOpacity
           style={[st.bottomBtn, st.bottomBtnPrimary]}
-          onPress={handleSave}
-          disabled={saving || loadingReorden}
+          onPress={handleSaveOnly}
+          disabled={saving}
         >
           <Text style={st.bottomBtnText}>
-            {saving
-              ? "Guardando..."
-              : isEdit
-              ? "Guardar cambios"
-              : "Crear bodega"}
+            {saving ? "Guardando..." : isEdit ? "Guardar" : "Crear"}
           </Text>
         </TouchableOpacity>
       </View>
-
     </View>
   );
 }
@@ -421,18 +318,10 @@ const st = StyleSheet.create({
     backgroundColor: "#f9fafb",
     fontSize: 13,
   },
-  row: {
-    flexDirection: "row",
-    gap: 10,
-  },
-  col: {
-    flex: 1,
-  },
-  helpText: {
-    fontSize: 11,
-    color: "#6b7280",
-    marginBottom: 8,
-  },
+  row: { flexDirection: "row", gap: 10 },
+  col: { flex: 1 },
+  helpText: { fontSize: 12, color: "#6b7280" },
+
   bottomBar: {
     position: "absolute",
     left: 16,
@@ -448,26 +337,16 @@ const st = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  bottomBtnPrimary: {
-    backgroundColor: "#2563eb",
-  },
-  bottomBtnSecondary: {
-    backgroundColor: "#e5e7eb",
-  },
+  bottomBtnPrimary: { backgroundColor: "#2563eb" },
+  bottomBtnSecondary: { backgroundColor: "#e5e7eb" },
   bottomBtnText: {
     fontSize: 13,
     color: "#ffffff",
     fontWeight: "600",
   },
-  bottomBtnTextSecondary: {
-    color: "#111827",
-  },
+  bottomBtnTextSecondary: { color: "#111827" },
 
-  // estilos para selección de ciudad
-  cityChipsRow: {
-    flexDirection: "row",
-    marginBottom: 8,
-  },
+  cityChipsRow: { flexDirection: "row", marginBottom: 8 },
   cityChip: {
     paddingHorizontal: 12,
     paddingVertical: 6,
@@ -477,16 +356,7 @@ const st = StyleSheet.create({
     backgroundColor: "#f9fafb",
     marginRight: 8,
   },
-  cityChipSelected: {
-    backgroundColor: "#2563eb",
-    borderColor: "#2563eb",
-  },
-  cityChipText: {
-    fontSize: 12,
-    color: "#374151",
-  },
-  cityChipTextSelected: {
-    color: "#ffffff",
-    fontWeight: "600",
-  },
+  cityChipSelected: { backgroundColor: "#2563eb", borderColor: "#2563eb" },
+  cityChipText: { fontSize: 12, color: "#374151" },
+  cityChipTextSelected: { color: "#ffffff", fontWeight: "600" },
 });

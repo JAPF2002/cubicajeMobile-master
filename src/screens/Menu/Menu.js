@@ -18,28 +18,16 @@ export default function Menu() {
       ? "Empleado"
       : "Invitado";
 
-  const goToBodegas = () => {
-    navigation.navigate("Bodegas"); // nombre de la tab
-  };
+  const goToBodegas = () => navigation.navigate("Bodegas"); // nombre de la tab
+  const goToItemsList = () => navigation.navigate("Items"); // nombre de la tab
+  const goToPerfil = () => navigation.navigate("Profile");
+  const goToSolicitudes = () => navigation.navigate("Solicitudes");
+  const goToUsers = () => navigation.navigate("UsersList");
 
-  const goToItemsList = () => {
-    navigation.navigate("Items"); // nombre de la tab
-  };
-
-  const goToPerfil = () => {
-    navigation.navigate("Profile");
-  };
-
-  const goToSolicitudes = () => {
-    navigation.navigate("Solicitudes");
-  };
-
-  const goToUsers = () => {
-    navigation.navigate("UsersList");
-  };
+  // ✅ ÚNICO BOTÓN: entra a Movimientos (y desde ahí vas a Informe)
+  const goToHistorial = () => navigation.navigate("Movimientos");
 
   const goToLogin = () => {
-    // limpiamos currentUser en el store y volvemos al login
     logout();
     navigation.replace("Login");
   };
@@ -55,38 +43,34 @@ export default function Menu() {
         <Text style={styles.bold}>{roleLabel}</Text>
       </Text>
 
-      {/* Bodegas */}
       <TouchableOpacity style={styles.btn} onPress={goToBodegas}>
         <Text style={styles.btnTxt}>Bodegas</Text>
       </TouchableOpacity>
 
-      {/* Ítems */}
       <TouchableOpacity style={styles.btn} onPress={goToItemsList}>
         <Text style={styles.btnTxt}>Ítems</Text>
       </TouchableOpacity>
 
-      {/* Perfil */}
       <TouchableOpacity style={styles.btn} onPress={goToPerfil}>
         <Text style={styles.btnTxt}>Perfil</Text>
       </TouchableOpacity>
 
-      {/* Solicitudes */}
       <TouchableOpacity style={styles.btn} onPress={goToSolicitudes}>
         <Text style={styles.btnTxt}>Solicitudes</Text>
       </TouchableOpacity>
 
-      {/* Gestión de usuarios: solo Admin */}
+      {/* ✅ Historial (Movimientos + Informe adentro) */}
+      <TouchableOpacity style={styles.btn} onPress={goToHistorial}>
+        <Text style={styles.btnTxt}>Historial</Text>
+      </TouchableOpacity>
+
       {isAdmin && (
         <TouchableOpacity style={styles.btn} onPress={goToUsers}>
           <Text style={styles.btnTxt}>Lista de usuarios</Text>
         </TouchableOpacity>
       )}
 
-      {/* Cerrar sesión */}
-      <TouchableOpacity
-        style={[styles.btn, styles.logoutBtn]}
-        onPress={goToLogin}
-      >
+      <TouchableOpacity style={[styles.btn, styles.logoutBtn]} onPress={goToLogin}>
         <Text style={styles.logoutTxt}>Cerrar sesión</Text>
       </TouchableOpacity>
     </View>
@@ -101,15 +85,16 @@ const styles = StyleSheet.create({
     backgroundColor: "#0f172a",
   },
   title: {
-    fontSize: 24,
-    fontWeight: "700",
+    fontSize: 28,
+    fontWeight: "800",
     marginBottom: 12,
     color: "#e5e7eb",
   },
   subtitle: {
     color: "#9ca3af",
     marginBottom: 16,
-    fontSize: 13,
+    fontSize: 15,
+    lineHeight: 20,
   },
   bold: {
     fontWeight: "700",
@@ -117,15 +102,19 @@ const styles = StyleSheet.create({
   },
   btn: {
     backgroundColor: "#2563eb",
-    padding: 14,
-    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 14,
+    borderRadius: 14,
     marginTop: 10,
+    minHeight: 52,
+    justifyContent: "center",
   },
   btnTxt: {
     color: "#fff",
     textAlign: "center",
-    fontWeight: "700",
-    fontSize: 14,
+    fontWeight: "800",
+    fontSize: 18,
+    letterSpacing: 0.2,
   },
   logoutBtn: {
     backgroundColor: "#ef4444",
@@ -134,7 +123,8 @@ const styles = StyleSheet.create({
   logoutTxt: {
     color: "#ffffff",
     textAlign: "center",
-    fontWeight: "700",
-    fontSize: 14,
+    fontWeight: "800",
+    fontSize: 18,
+    letterSpacing: 0.2,
   },
 });

@@ -13,6 +13,8 @@ import ProfileScreen from "../screens/Perfil/ProfileScreen";
 import SolicitudesScreen from "../screens/Solicitudes/SolicitudesScreen";
 import UserFormScreen from "../screens/UserList/UserFormScreen";
 import UsersListScreen from "../screens/UserList/UsersListScreen";
+import MovimientosScreen from "../screens/Movimientos/MovimientosScreen";
+import InformeScreen from "../screens/Movimientos/InformeScreen";
 
 // Bodega 3D
 import Bodega3DScreen from "../features/bodega3d/Bodega3DScreen";
@@ -35,9 +37,12 @@ export default function AppStack() {
       {/* Pantallas de usuario / administración */}
       <Stack.Screen name="Profile" component={ProfileScreen} />
       <Stack.Screen name="Solicitudes" component={SolicitudesScreen} />
+      <Stack.Screen name="Movimientos" component={MovimientosScreen} />
+      <Stack.Screen name="Informe" component={InformeScreen} />
       <Stack.Screen name="AdminUsers" component={UsersListScreen} />
       <Stack.Screen name="UsersList" component={UsersListScreen} />
       <Stack.Screen name="UserForm" component={UserFormScreen} />
+      
 
       {/* Vista 3D de Bodega */}
       <Stack.Screen

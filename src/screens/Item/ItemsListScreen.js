@@ -1,4 +1,4 @@
-// src/screens/Item/ItemsListScreen.js
+// cubicajeMobile-master/src/screens/Item/ItemsListScreen.js
 import React, { useMemo, useState } from "react";
 import {
   View,
@@ -13,14 +13,10 @@ import {
 import { useApp, clampInt, SIZE_CLASSES } from "../../store";
 
 export default function ItemsListScreen(props) {
-  const {
-    goToMenu,
-    goToItemFormNew,
-    goToItemFormEdit,
-    navigation,
-  } = props;
+  const { goToMenu, goToItemFormNew, goToItemFormEdit, navigation } = props;
 
-  const { bodegas, items, deleteItem, moveItemPartial, saveItem } = useApp();
+  // ✅ usamos los handlers físicos reales
+  const { bodegas, items, moveItemPartial, egresarItemPartial } = useApp();
 
   const [filterBodegaId, setFilterBodegaId] = useState(null);
   const [locationFilter, setLocationFilter] = useState("all");
@@ -42,7 +38,7 @@ export default function ItemsListScreen(props) {
     cantidad: "",
   });
 
-  // ---- helpers navegación, funcionan con props o con navigation ----
+  // ---- helpers navegación ----
   const irMenu = () => {
     if (typeof goToMenu === "function") return goToMenu();
     if (navigation?.navigate) return navigation.navigate("Menu");
@@ -50,15 +46,12 @@ export default function ItemsListScreen(props) {
 
   const irItemFormNew = () => {
     if (typeof goToItemFormNew === "function") return goToItemFormNew();
-    if (navigation?.navigate)
-      return navigation.navigate("ItemForm", { mode: "new" });
+    if (navigation?.navigate) return navigation.navigate("ItemForm", { mode: "new" });
   };
 
   const irItemFormEdit = (item) => {
-    if (typeof goToItemFormEdit === "function")
-      return goToItemFormEdit(item);
-    if (navigation?.navigate)
-      return navigation.navigate("ItemForm", { item });
+    if (typeof goToItemFormEdit === "function") return goToItemFormEdit(item);
+    if (navigation?.navigate) return navigation.navigate("ItemForm", { item });
   };
 
   const filtered = useMemo(() => {
@@ -75,30 +68,40 @@ export default function ItemsListScreen(props) {
     }
 
     if (filterClass) {
-      list = list.filter(
-        (it) => (it.clase || "N/D") === filterClass
-      );
+      list = list.filter((it) => (it.clase || "N/D") === filterClass);
     }
 
-    list.sort((a, b) =>
-      (a.nombre || "").localeCompare(b.nombre || "")
-    );
+    list.sort((a, b) => (a.nombre || "").localeCompare(b.nombre || ""));
     return list;
   }, [items, filterBodegaId, locationFilter, filterClass]);
 
   const openMoveDialog = (it) => {
-    const disponibles = clampInt(it.cantidad, 1);
+    const disponibles = clampInt(it.cantidad, 0);
+
+    // Si no tiene bodega, no hay "origen físico" para /move
+    if (!it.bodegaId) {
+      return Alert.alert(
+        "Asignar bodega",
+        "Este ítem está 'Sin bodega'. Para asignarlo físicamente necesitas un ingreso (auto-ubicación), no /move."
+      );
+    }
+
+    if (disponibles <= 0) {
+      return Alert.alert("Sin stock", "No hay unidades disponibles para mover.");
+    }
+
     setMoveDialog({
       visible: true,
       item: it,
-      fromBodegaId: it.bodegaId ?? null,
+      fromBodegaId: it.bodegaId,
       toBodegaId: null,
-      cantidad: disponibles > 0 ? "1" : "",
+      cantidad: "1",
     });
   };
 
   const confirmMove = async () => {
     const { item, fromBodegaId, toBodegaId, cantidad } = moveDialog;
+
     if (!item) {
       setMoveDialog({
         visible: false,
@@ -110,29 +113,25 @@ export default function ItemsListScreen(props) {
       return;
     }
 
-    const total = clampInt(item.cantidad, 1);
-    const cant = parseInt(
-      (cantidad || "").replace(/[^0-9]/g, "") || "0",
-      10
-    );
+    const total = clampInt(item.cantidad, 0);
+    if (total <= 0) {
+      return Alert.alert("Sin stock", "No hay unidades disponibles para mover.");
+    }
+
+    // ✅ BUGFIX: faltaba definir cant
+    const cant = parseInt((cantidad || "").replace(/[^0-9]/g, "") || "0", 10);
 
     if (!cant || cant <= 0) {
-      return Alert.alert(
-        "Cantidad inválida",
-        "Ingresa una cantidad mayor o igual a 1."
-      );
+      return Alert.alert("Cantidad inválida", "Ingresa una cantidad mayor o igual a 1.");
     }
     if (cant > total) {
-      return Alert.alert(
-        "Cantidad inválida",
-        `Solo hay ${total} unidades disponibles.`
-      );
+      return Alert.alert("Cantidad inválida", `Solo hay ${total} unidades disponibles.`);
     }
     if (!toBodegaId) {
-      return Alert.alert(
-        "Falta destino",
-        "Selecciona la bodega destino."
-      );
+      return Alert.alert("Falta destino", "Selecciona la bodega destino.");
+    }
+    if (!fromBodegaId) {
+      return Alert.alert("Falta origen", "Este ítem no tiene bodega origen para mover.");
     }
 
     try {
@@ -142,7 +141,9 @@ export default function ItemsListScreen(props) {
         toBodegaId,
         cantidad: cant,
       });
-    } catch {}
+    } catch {
+      // moveItemPartial ya muestra su error si lo tienes implementado así
+    }
 
     setMoveDialog({
       visible: false,
@@ -163,47 +164,46 @@ export default function ItemsListScreen(props) {
 
   const confirmRemove = async () => {
     const { item, cantidad } = removeDialog;
+
     if (!item) {
-      setRemoveDialog({
-        visible: false,
-        item: null,
-        cantidad: "",
-      });
+      setRemoveDialog({ visible: false, item: null, cantidad: "" });
       return;
     }
 
-    const total = clampInt(item.cantidad, 1);
-    const cant = parseInt(
-      (cantidad || "").replace(/[^0-9]/g, "") || "0",
-      10
-    );
+    // Necesitamos bodega origen para egresar físicamente
+    if (!item.bodegaId) {
+      return Alert.alert("Sin bodega", "Este ítem no tiene bodega origen para egresar.");
+    }
+
+    const total = clampInt(item.cantidad, 0);
+    const cant = parseInt((cantidad || "").replace(/[^0-9]/g, "") || "0", 10);
 
     if (!cant || cant <= 0) {
-      return Alert.alert(
-        "Cantidad inválida",
-        "Ingresa una cantidad mayor o igual a 1."
-      );
+      return Alert.alert("Cantidad inválida", "Ingresa una cantidad mayor o igual a 1.");
+    }
+    if (cant > total) {
+      return Alert.alert("Cantidad inválida", `Solo hay ${total} unidades disponibles.`);
     }
 
-    if (cant >= total) {
-      await deleteItem(item.id);
-    } else {
-      await saveItem({
-        ...item,
-        cantidad: total - cant,
+    try {
+      await egresarItemPartial({
+        id: item.id,
+        bodegaId: item.bodegaId,
+        cantidad: cant,
       });
+    } catch (e) {
+      // egresarItemPartial ya muestra alert si falla
+    } finally {
+      setRemoveDialog({ visible: false, item: null, cantidad: "" });
     }
-
-    setRemoveDialog({
-      visible: false,
-      item: null,
-      cantidad: "",
-    });
   };
 
   const renderCard = ({ item: it }) => {
     const b = bodegas.find((x) => x.id === it.bodegaId);
-    const cant = clampInt(it.cantidad, 1);
+
+    // ✅ no inventar mínimo 1
+    const cant = clampInt(it.cantidad, 0);
+
     const esSuelto = !it.bodegaId;
 
     const pesoUnit = Number(it.peso) || 0;
@@ -212,36 +212,18 @@ export default function ItemsListScreen(props) {
     return (
       <View style={st.card}>
         <View style={st.cardTitleRow}>
-          <Text
-            style={st.cardTitle}
-            numberOfLines={1}
-            ellipsizeMode="tail"
-          >
+          <Text style={st.cardTitle} numberOfLines={1} ellipsizeMode="tail">
             {it.nombre}
           </Text>
           <Text style={st.badge}>{it.clase || "N/D"}</Text>
-          {esSuelto && (
-            <Text style={[st.badge, { color: "#b45309" }]}>
-              {" "}
-              Sin bodega
-            </Text>
-          )}
+          {esSuelto && <Text style={[st.badge, { color: "#b45309" }]}> Sin bodega</Text>}
         </View>
 
         <Text style={st.cardLine}>Cantidad: {cant} uds</Text>
+        <Text style={st.cardLine}>Bodega: {b ? b.nombre : "(sin asignar)"}</Text>
         <Text style={st.cardLine}>
-          Bodega: {b ? b.nombre : "(sin asignar)"}
-        </Text>
-        <Text style={st.cardLine}>
-          Peso unitario:{" "}
-          {isFinite(pesoUnit)
-            ? pesoUnit.toFixed(2)
-            : "0.00"}{" "}
-          kg · Peso total:{" "}
-          {isFinite(pesoTotal)
-            ? pesoTotal.toFixed(2)
-            : "0.00"}{" "}
-          kg
+          Peso unitario: {isFinite(pesoUnit) ? pesoUnit.toFixed(2) : "0.00"} kg · Peso total:{" "}
+          {isFinite(pesoTotal) ? pesoTotal.toFixed(2) : "0.00"} kg
         </Text>
 
         <View style={st.section}>
@@ -252,26 +234,15 @@ export default function ItemsListScreen(props) {
         </View>
 
         <View style={[st.row, { gap: 8, marginTop: 8 }]}>
-          <TouchableOpacity
-            style={[st.btn, st.btnPrimaryOutline]}
-            onPress={() => irItemFormEdit(it)}
-          >
+          <TouchableOpacity style={[st.btn, st.btnPrimaryOutline]} onPress={() => irItemFormEdit(it)}>
             <Text style={st.btnPrimaryOutlineTxt}>Editar</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[st.btn, st.btnPrimary]}
-            onPress={() => openMoveDialog(it)}
-          >
-            <Text style={st.btnTxt}>
-              {esSuelto ? "Asignar bodega" : "Mover"}
-            </Text>
+          <TouchableOpacity style={[st.btn, st.btnPrimary]} onPress={() => openMoveDialog(it)}>
+            <Text style={st.btnTxt}>{esSuelto ? "Asignar bodega" : "Mover"}</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[st.btn, st.btnDanger]}
-            onPress={() => openRemoveDialog(it)}
-          >
+          <TouchableOpacity style={[st.btn, st.btnDanger]} onPress={() => openRemoveDialog(it)}>
             <Text style={st.btnTxt}>Sacar</Text>
           </TouchableOpacity>
         </View>
@@ -285,8 +256,7 @@ export default function ItemsListScreen(props) {
       return b ? `Bodega: ${b.nombre}` : "Bodega (desconocida)";
     }
     if (locationFilter === "with") return "Items con bodega";
-    if (locationFilter === "without")
-      return "Items sin bodega";
+    if (locationFilter === "without") return "Items sin bodega";
     return "Todas las bodegas";
   };
 
@@ -295,20 +265,13 @@ export default function ItemsListScreen(props) {
       <View style={st.headerRow}>
         <View>
           <Text style={st.title}>Ítems</Text>
-          <Text style={st.subtitle}>
-            Lista, filtros y movimientos de inventario.
-          </Text>
+          <Text style={st.subtitle}>Lista, filtros y movimientos de inventario.</Text>
         </View>
       </View>
 
       <View style={[st.row, { gap: 8 }]}>
-        <TouchableOpacity
-          style={[st.selectorBtn, { flex: 1 }]}
-          onPress={() => setFilterModalVisible(true)}
-        >
-          <Text style={st.selectorText}>
-            {currentFilterLabel()}
-          </Text>
+        <TouchableOpacity style={[st.selectorBtn, { flex: 1 }]} onPress={() => setFilterModalVisible(true)}>
+          <Text style={st.selectorText}>{currentFilterLabel()}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -323,23 +286,12 @@ export default function ItemsListScreen(props) {
         </TouchableOpacity>
       </View>
 
-      <View
-        style={[
-          st.row,
-          { flexWrap: "wrap", gap: 8, marginVertical: 4 },
-        ]}
-      >
+      <View style={[st.row, { flexWrap: "wrap", gap: 8, marginVertical: 4 }]}>
         {[null, ...SIZE_CLASSES.map((c) => c.key)].map((k) => {
-          const active =
-            (k === null && filterClass === null) ||
-            filterClass === k;
+          const active = (k === null && filterClass === null) || filterClass === k;
           const label = k || "Todas las clases";
           return (
-            <TouchableOpacity
-              key={String(k)}
-              style={[st.pill, active && st.pillA]}
-              onPress={() => setFilterClass(k)}
-            >
+            <TouchableOpacity key={String(k)} style={[st.pill, active && st.pillA]} onPress={() => setFilterClass(k)}>
               <Text style={{ fontWeight: "700" }}>{label}</Text>
             </TouchableOpacity>
           );
@@ -348,18 +300,10 @@ export default function ItemsListScreen(props) {
 
       <FlatList
         data={filtered}
-        keyExtractor={(it) =>
-          String(it.id) + "-" + String(it.bodegaId ?? "x")
-        }
+        keyExtractor={(it) => String(it.id) + "-" + String(it.bodegaId ?? "x")}
         renderItem={renderCard}
         ListEmptyComponent={
-          <Text
-            style={{
-              textAlign: "center",
-              color: "#64748b",
-              marginTop: 20,
-            }}
-          >
+          <Text style={{ textAlign: "center", color: "#64748b", marginTop: 20 }}>
             No hay ítems para los filtros.
           </Text>
         }
@@ -368,76 +312,39 @@ export default function ItemsListScreen(props) {
 
       {/* BARRA INFERIOR */}
       <View style={st.bottomBar}>
-        <TouchableOpacity
-          style={st.bottomBtn}
-          onPress={irMenu}
-        >
+        <TouchableOpacity style={st.bottomBtn} onPress={irMenu}>
           <Text style={st.bottomBtnText}>Menú principal</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[st.bottomBtn, st.bottomBtnActive]}
-          disabled
-        >
-          <Text
-            style={[
-              st.bottomBtnText,
-              st.bottomBtnTextActive,
-            ]}
-          >
-            Lista de ítems
-          </Text>
+        <TouchableOpacity style={[st.bottomBtn, st.bottomBtnActive]} disabled>
+          <Text style={[st.bottomBtnText, st.bottomBtnTextActive]}>Lista de ítems</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={st.bottomBtn}
-          onPress={irItemFormNew}
-        >
+        <TouchableOpacity style={st.bottomBtn} onPress={irItemFormNew}>
           <Text style={st.bottomBtnText}>Agregar ítem</Text>
         </TouchableOpacity>
       </View>
 
       {/* --- Modales --- */}
+
       {/* MODAL FILTRO BODEGA */}
       <Modal
         visible={filterModalVisible}
         transparent
         animationType="fade"
-        onRequestClose={() =>
-          setFilterModalVisible(false)
-        }
+        onRequestClose={() => setFilterModalVisible(false)}
       >
         <View style={st.modalBackdrop}>
           <View style={st.modalBox}>
-            <Text style={st.modalTitle}>
-              Filtrar por bodega
-            </Text>
+            <Text style={st.modalTitle}>Filtrar por bodega</Text>
 
             <FlatList
               style={{ marginTop: 8, maxHeight: 260 }}
               data={[
-                {
-                  type: "option",
-                  key: "all",
-                  label:
-                    "Todas las bodegas (todos los ítems)",
-                },
-                {
-                  type: "option",
-                  key: "with",
-                  label: "Items con bodega",
-                },
-                {
-                  type: "option",
-                  key: "without",
-                  label: "Items sin bodega",
-                },
-                ...bodegas.map((b) => ({
-                  type: "bodega",
-                  key: `b-${b.id}`,
-                  id: b.id,
-                  label: b.nombre,
-                })),
+                { type: "option", key: "all", label: "Todas las bodegas (todos los ítems)" },
+                { type: "option", key: "with", label: "Items con bodega" },
+                { type: "option", key: "without", label: "Items sin bodega" },
+                ...bodegas.map((b) => ({ type: "bodega", key: `b-${b.id}`, id: b.id, label: b.nombre })),
               ]}
               keyExtractor={(item) => item.key}
               renderItem={({ item }) => {
@@ -449,23 +356,17 @@ export default function ItemsListScreen(props) {
                         if (item.key === "all") {
                           setFilterBodegaId(null);
                           setLocationFilter("all");
-                        } else if (
-                          item.key === "with"
-                        ) {
+                        } else if (item.key === "with") {
                           setFilterBodegaId(null);
                           setLocationFilter("with");
-                        } else if (
-                          item.key === "without"
-                        ) {
+                        } else if (item.key === "without") {
                           setFilterBodegaId(null);
                           setLocationFilter("without");
                         }
                         setFilterModalVisible(false);
                       }}
                     >
-                      <Text style={st.destItemText}>
-                        {item.label}
-                      </Text>
+                      <Text style={st.destItemText}>{item.label}</Text>
                     </TouchableOpacity>
                   );
                 }
@@ -479,23 +380,14 @@ export default function ItemsListScreen(props) {
                       setFilterModalVisible(false);
                     }}
                   >
-                    <Text style={st.destItemText}>
-                      {item.label}
-                    </Text>
+                    <Text style={st.destItemText}>{item.label}</Text>
                   </TouchableOpacity>
                 );
               }}
             />
 
-            <View
-              style={[st.row, { marginTop: 12 }]}
-            >
-              <TouchableOpacity
-                style={[st.btn, st.btnDanger]}
-                onPress={() =>
-                  setFilterModalVisible(false)
-                }
-              >
+            <View style={[st.row, { marginTop: 12 }]}>
+              <TouchableOpacity style={[st.btn, st.btnDanger]} onPress={() => setFilterModalVisible(false)}>
                 <Text style={st.btnTxt}>Cerrar</Text>
               </TouchableOpacity>
             </View>
@@ -521,66 +413,33 @@ export default function ItemsListScreen(props) {
         <View style={st.modalBackdrop}>
           <View style={st.modalBox}>
             <Text style={st.modalTitle}>Mover ítem</Text>
+
             {moveDialog.item && (
               <>
-                <Text style={st.modalText}>
-                  {moveDialog.item.nombre}
-                </Text>
+                <Text style={st.modalText}>{moveDialog.item.nombre}</Text>
                 <Text style={st.modalText}>
                   Origen:{" "}
                   {moveDialog.fromBodegaId
-                    ? bodegas.find(
-                        (b) =>
-                          b.id ===
-                          moveDialog.fromBodegaId
-                      )?.nombre
+                    ? bodegas.find((b) => b.id === moveDialog.fromBodegaId)?.nombre
                     : "Sin bodega"}
                 </Text>
                 <Text style={st.modalText}>
-                  Disponible:{" "}
-                  {clampInt(
-                    moveDialog.item.cantidad,
-                    1
-                  )}{" "}
-                  uds
+                  Disponible: {clampInt(moveDialog.item.cantidad, 0)} uds
                 </Text>
 
-                <Text
-                  style={[
-                    st.label,
-                    { marginTop: 8 },
-                  ]}
-                >
-                  Cantidad a mover
-                </Text>
+                <Text style={[st.label, { marginTop: 8 }]}>Cantidad a mover</Text>
                 <TextInput
                   style={st.input}
                   keyboardType="numeric"
                   placeholder="Ej: 5"
                   value={moveDialog.cantidad}
                   onChangeText={(v) => {
-                    const only = v.replace(
-                      /[^0-9]/g,
-                      ""
-                    );
-                    setMoveDialog((prev) => ({
-                      ...prev,
-                      cantidad: only,
-                    }));
+                    const only = v.replace(/[^0-9]/g, "");
+                    setMoveDialog((prev) => ({ ...prev, cantidad: only }));
                   }}
                 />
 
-                <Text
-                  style={[
-                    st.label,
-                    {
-                      marginTop: 10,
-                      marginBottom: 4,
-                    },
-                  ]}
-                >
-                  Bodega destino
-                </Text>
+                <Text style={[st.label, { marginTop: 10, marginBottom: 4 }]}>Bodega destino</Text>
 
                 <View
                   style={{
@@ -592,56 +451,22 @@ export default function ItemsListScreen(props) {
                   }}
                 >
                   <FlatList
-                    data={bodegas.filter(
-                      (b) =>
-                        b.id !==
-                        moveDialog.fromBodegaId
-                    )}
-                    keyExtractor={(b) =>
-                      String(b.id)
-                    }
+                    data={bodegas.filter((b) => b?.active === true && b.id !== moveDialog.fromBodegaId)}
+                    keyExtractor={(b) => String(b.id)}
                     renderItem={({ item: b }) => {
-                      const selected =
-                        moveDialog.toBodegaId === b.id;
+                      const selected = moveDialog.toBodegaId === b.id;
                       return (
                         <TouchableOpacity
-                          style={[
-                            st.destItem,
-                            selected &&
-                              st.destItemSelected,
-                          ]}
-                          onPress={() =>
-                            setMoveDialog(
-                              (prev) => ({
-                                ...prev,
-                                toBodegaId: b.id,
-                              })
-                            )
-                          }
+                          style={[st.destItem, selected && st.destItemSelected]}
+                          onPress={() => setMoveDialog((prev) => ({ ...prev, toBodegaId: b.id }))}
                         >
-                          <Text
-                            style={[
-                              st.destItemText,
-                              selected &&
-                                st.destItemTextSelected,
-                            ]}
-                          >
-                            {b.nombre}
-                          </Text>
+                          <Text style={[st.destItemText, selected && st.destItemTextSelected]}>{b.nombre}</Text>
                         </TouchableOpacity>
                       );
                     }}
                     ListEmptyComponent={
-                      <Text
-                        style={{
-                          padding: 10,
-                          fontSize: 12,
-                          color: "#6b7280",
-                        }}
-                      >
-                        No hay bodegas
-                        disponibles como
-                        destino.
+                      <Text style={{ padding: 10, fontSize: 12, color: "#6b7280" }}>
+                        No hay bodegas disponibles como destino.
                       </Text>
                     }
                   />
@@ -649,12 +474,7 @@ export default function ItemsListScreen(props) {
               </>
             )}
 
-            <View
-              style={[
-                st.row,
-                { marginTop: 12, gap: 8 },
-              ]}
-            >
+            <View style={[st.row, { marginTop: 12, gap: 8 }]}>
               <TouchableOpacity
                 style={[st.btn, st.btnDanger]}
                 onPress={() =>
@@ -667,17 +487,10 @@ export default function ItemsListScreen(props) {
                   })
                 }
               >
-                <Text style={st.btnTxt}>
-                  Cancelar
-                </Text>
+                <Text style={st.btnTxt}>Cancelar</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={[st.btn, st.btnPrimary]}
-                onPress={confirmMove}
-              >
-                <Text style={st.btnTxt}>
-                  Confirmar
-                </Text>
+              <TouchableOpacity style={[st.btn, st.btnPrimary]} onPress={confirmMove}>
+                <Text style={st.btnTxt}>Confirmar</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -699,76 +512,38 @@ export default function ItemsListScreen(props) {
       >
         <View style={st.modalBackdrop}>
           <View style={st.modalBox}>
-            <Text style={st.modalTitle}>
-              Sacar unidades
-            </Text>
+            <Text style={st.modalTitle}>Sacar unidades</Text>
+
             {removeDialog.item && (
               <>
+                <Text style={st.modalText}>{removeDialog.item.nombre}</Text>
                 <Text style={st.modalText}>
-                  {removeDialog.item.nombre}
+                  Cantidad disponible: {clampInt(removeDialog.item.cantidad, 0)} uds
                 </Text>
-                <Text style={st.modalText}>
-                  Cantidad disponible:{" "}
-                  {clampInt(
-                    removeDialog.item.cantidad,
-                    1
-                  )}{" "}
-                  uds
-                </Text>
-                <Text
-                  style={[
-                    st.label,
-                    { marginTop: 8 },
-                  ]}
-                >
-                  Cantidad a sacar
-                </Text>
+
+                <Text style={[st.label, { marginTop: 8 }]}>Cantidad a sacar</Text>
                 <TextInput
                   style={st.input}
                   keyboardType="numeric"
                   placeholder="Ej: 3"
                   value={removeDialog.cantidad}
                   onChangeText={(v) => {
-                    const only = v.replace(
-                      /[^0-9]/g,
-                      ""
-                    );
-                    setRemoveDialog((prev) => ({
-                      ...prev,
-                      cantidad: only,
-                    }));
+                    const only = v.replace(/[^0-9]/g, "");
+                    setRemoveDialog((prev) => ({ ...prev, cantidad: only }));
                   }}
                 />
               </>
             )}
 
-            <View
-              style={[
-                st.row,
-                { marginTop: 12, gap: 8 },
-              ]}
-            >
+            <View style={[st.row, { marginTop: 12, gap: 8 }]}>
               <TouchableOpacity
                 style={[st.btn, st.btnDanger]}
-                onPress={() =>
-                  setRemoveDialog({
-                    visible: false,
-                    item: null,
-                    cantidad: "",
-                  })
-                }
+                onPress={() => setRemoveDialog({ visible: false, item: null, cantidad: "" })}
               >
-                <Text style={st.btnTxt}>
-                  Cancelar
-                </Text>
+                <Text style={st.btnTxt}>Cancelar</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={[st.btn, st.btnPrimary]}
-                onPress={confirmRemove}
-              >
-                <Text style={st.btnTxt}>
-                  Confirmar
-                </Text>
+              <TouchableOpacity style={[st.btn, st.btnPrimary]} onPress={confirmRemove}>
+                <Text style={st.btnTxt}>Confirmar</Text>
               </TouchableOpacity>
             </View>
           </View>

@@ -38,7 +38,6 @@ const PRODUCTOS_POR_CATEGORIA = {
   ],
 };
 
-
 export default function ItemFormScreen(props) {
   const { goToMenu, goToItemsList, item: propItem, navigation, route } = props;
 
@@ -101,10 +100,7 @@ export default function ItemFormScreen(props) {
           activo: row.activo === 1 || row.activo === true,
         }));
 
-        console.log(
-          "[ItemFormScreen] categoriasFromDb (local):",
-          categoriasFromDb
-        );
+        console.log("[ItemFormScreen] categoriasFromDb (local):", categoriasFromDb);
 
         setCategoriasLocal(categoriasFromDb);
       } catch (err) {
@@ -121,6 +117,12 @@ export default function ItemFormScreen(props) {
   );
 
   console.log("[ItemFormScreen] CATEGORY_LIST para modal:", CATEGORY_LIST);
+
+  // ✅ NUEVO: SOLO bodegas activas para el selector
+  const ACTIVE_BODEGAS = useMemo(() => {
+    const list = Array.isArray(bodegas) ? bodegas : [];
+    return list.filter((b) => b?.active === true);
+  }, [bodegas]);
 
   // Lista de productos sugeridos según la categoría seleccionada
   const productosDeCategoria = useMemo(() => {
@@ -142,9 +144,7 @@ export default function ItemFormScreen(props) {
   // Inicializar form cuando venga un item (edición) o cambien las categorías
   useEffect(() => {
     if (item) {
-      const categoria = CATEGORY_LIST.find(
-        (c) => c.id === item.id_categoria
-      );
+      const categoria = CATEGORY_LIST.find((c) => c.id === item.id_categoria);
 
       setForm((prev) => ({
         ...prev,
@@ -185,10 +185,7 @@ export default function ItemFormScreen(props) {
 
   const openCategoryModal = () => {
     if (!CATEGORY_LIST.length)
-      return Alert.alert(
-        "Categorías",
-        "No hay categorías configuradas o activas."
-      );
+      return Alert.alert("Categorías", "No hay categorías configuradas o activas.");
     setCategoryModalVisible(true);
   };
 
@@ -206,10 +203,7 @@ export default function ItemFormScreen(props) {
     if (!form.categoriaNombre)
       return Alert.alert("Producto", "Primero selecciona una categoría.");
     if (!productosDeCategoria.length)
-      return Alert.alert(
-        "Producto",
-        "No hay productos sugeridos para esta categoría."
-      );
+      return Alert.alert("Producto", "No hay productos sugeridos para esta categoría.");
     setProductModalVisible(true);
   };
 
@@ -222,8 +216,8 @@ export default function ItemFormScreen(props) {
   };
 
   const openBodegaModal = () => {
-    if (!bodegas || !bodegas.length) {
-      return Alert.alert("Bodega", "No hay bodegas definidas.");
+    if (!ACTIVE_BODEGAS.length) {
+      return Alert.alert("Bodega", "No hay bodegas activas disponibles.");
     }
     setBodegaModalVisible(true);
   };
@@ -245,9 +239,8 @@ export default function ItemFormScreen(props) {
     if (!form.bodegaId)
       return Alert.alert("Falta bodega", "Selecciona una bodega.");
 
-    const b = bodegas.find((x) => x.id === form.bodegaId);
-    if (!b)
-      return Alert.alert("Bodega", "La bodega seleccionada no existe.");
+    const b = (bodegas || []).find((x) => x.id === form.bodegaId);
+    if (!b) return Alert.alert("Bodega", "La bodega seleccionada no existe.");
 
     const m = metricsOf(b);
     if (isFinite(volNecesario) && volNecesario > m.libre + 1e-9) {
@@ -277,12 +270,12 @@ export default function ItemFormScreen(props) {
   };
 
   const bodegaNombre =
-    form.bodegaId && bodegas.find((b) => b.id === form.bodegaId)?.nombre;
+    form.bodegaId && (bodegas || []).find((b) => b.id === form.bodegaId)?.nombre;
+
   const bodegaOptionsText =
-    bodegas && bodegas.length
-      ? "IDs disponibles: " +
-        bodegas.map((b) => `${b.id} (${b.nombre})`).join(", ")
-      : "No hay bodegas definidas.";
+    ACTIVE_BODEGAS.length
+      ? "Bodegas activas: " + ACTIVE_BODEGAS.map((b) => `${b.id} (${b.nombre})`).join(", ")
+      : "No hay bodegas activas.";
 
   return (
     <View style={st.container}>
@@ -292,41 +285,21 @@ export default function ItemFormScreen(props) {
           <TouchableOpacity onPress={irMenu} style={st.headerBack}>
             <Text style={st.headerBackText}>{"<"}</Text>
           </TouchableOpacity>
-          <Text style={st.headerTitle}>
-            {form.id ? "Editar ítem" : "Nuevo ítem"}
-          </Text>
+          <Text style={st.headerTitle}>{form.id ? "Editar ítem" : "Nuevo ítem"}</Text>
         </View>
 
         {/* Categoría */}
         <Text style={st.label}>Categoría</Text>
-        <TouchableOpacity
-          style={st.touchField}
-          onPress={openCategoryModal}
-          activeOpacity={0.7}
-        >
-          <Text
-            style={[
-              st.touchFieldText,
-              !form.categoriaNombre && st.placeholderText,
-            ]}
-          >
+        <TouchableOpacity style={st.touchField} onPress={openCategoryModal} activeOpacity={0.7}>
+          <Text style={[st.touchFieldText, !form.categoriaNombre && st.placeholderText]}>
             {form.categoriaNombre || "Toca para elegir categoría"}
           </Text>
         </TouchableOpacity>
 
         {/* Producto */}
         <Text style={st.label}>Producto</Text>
-        <TouchableOpacity
-          style={st.touchField}
-          onPress={openProductModal}
-          activeOpacity={0.7}
-        >
-          <Text
-            style={[
-              st.touchFieldText,
-              !form.productoNombre && st.placeholderText,
-            ]}
-          >
+        <TouchableOpacity style={st.touchField} onPress={openProductModal} activeOpacity={0.7}>
+          <Text style={[st.touchFieldText, !form.productoNombre && st.placeholderText]}>
             {form.productoNombre || "Toca para elegir producto sugerido"}
           </Text>
         </TouchableOpacity>
@@ -335,9 +308,7 @@ export default function ItemFormScreen(props) {
           style={[st.input, { marginTop: 6 }]}
           placeholder="O escribe el nombre del producto"
           value={form.productoNombre}
-          onChangeText={(texto) =>
-            setForm((prev) => ({ ...prev, productoNombre: texto }))
-          }
+          onChangeText={(texto) => setForm((prev) => ({ ...prev, productoNombre: texto }))}
         />
 
         {/* Dimensiones */}
@@ -345,9 +316,7 @@ export default function ItemFormScreen(props) {
           <Text style={st.label}>Dimensiones (m)</Text>
           {Number.isFinite(volUnit) && (
             <View style={st.volBadge}>
-              <Text style={st.volText}>
-                Vol. unitario: {volUnit.toFixed(2)} m³
-              </Text>
+              <Text style={st.volText}>Vol. unitario: {volUnit.toFixed(2)} m³</Text>
             </View>
           )}
         </View>
@@ -359,9 +328,7 @@ export default function ItemFormScreen(props) {
               style={st.input}
               keyboardType="numeric"
               value={form.ancho}
-              onChangeText={(v) =>
-                setForm((prev) => ({ ...prev, ancho: v.replace(",", ".") }))
-              }
+              onChangeText={(v) => setForm((prev) => ({ ...prev, ancho: v.replace(",", ".") }))}
             />
           </View>
           <View style={st.inputGroup}>
@@ -370,9 +337,7 @@ export default function ItemFormScreen(props) {
               style={st.input}
               keyboardType="numeric"
               value={form.alto}
-              onChangeText={(v) =>
-                setForm((prev) => ({ ...prev, alto: v.replace(",", ".") }))
-              }
+              onChangeText={(v) => setForm((prev) => ({ ...prev, alto: v.replace(",", ".") }))}
             />
           </View>
           <View style={st.inputGroup}>
@@ -381,9 +346,7 @@ export default function ItemFormScreen(props) {
               style={st.input}
               keyboardType="numeric"
               value={form.largo}
-              onChangeText={(v) =>
-                setForm((prev) => ({ ...prev, largo: v.replace(",", ".") }))
-              }
+              onChangeText={(v) => setForm((prev) => ({ ...prev, largo: v.replace(",", ".") }))}
             />
           </View>
         </View>
@@ -396,9 +359,7 @@ export default function ItemFormScreen(props) {
               style={st.input}
               keyboardType="numeric"
               value={form.peso}
-              onChangeText={(v) =>
-                setForm((prev) => ({ ...prev, peso: v.replace(",", ".") }))
-              }
+              onChangeText={(v) => setForm((prev) => ({ ...prev, peso: v.replace(",", ".") }))}
             />
           </View>
           <View style={st.inputGroup}>
@@ -407,27 +368,16 @@ export default function ItemFormScreen(props) {
               style={st.input}
               keyboardType="numeric"
               value={form.cantidad}
-              onChangeText={(v) =>
-                setForm((prev) => ({ ...prev, cantidad: v.replace(",", ".") }))
-              }
+              onChangeText={(v) => setForm((prev) => ({ ...prev, cantidad: v.replace(",", ".") }))}
             />
           </View>
         </View>
 
         {/* Bodega */}
         <Text style={[st.label, { marginTop: 16 }]}>Bodega</Text>
-        <TouchableOpacity
-          style={st.touchField}
-          onPress={openBodegaModal}
-          activeOpacity={0.7}
-        >
-          <Text
-            style={[
-              st.touchFieldText,
-              !bodegaNombre && st.placeholderText,
-            ]}
-          >
-            {bodegaNombre || "Toca para elegir bodega"}
+        <TouchableOpacity style={st.touchField} onPress={openBodegaModal} activeOpacity={0.7}>
+          <Text style={[st.touchFieldText, !bodegaNombre && st.placeholderText]}>
+            {bodegaNombre || "Toca para elegir bodega (solo activas)"}
           </Text>
         </TouchableOpacity>
         <Text style={st.helperText}>{bodegaOptionsText}</Text>
@@ -437,8 +387,7 @@ export default function ItemFormScreen(props) {
           <View style={{ marginTop: 16 }}>
             <Text style={st.label}>Volumen total requerido</Text>
             <Text style={st.helperText}>
-              {cantidadInt} unidades x {volUnit.toFixed(2)} m³ ={" "}
-              {volNecesario.toFixed(2)} m³
+              {cantidadInt} unidades x {volUnit.toFixed(2)} m³ = {volNecesario.toFixed(2)} m³
             </Text>
           </View>
         )}
@@ -450,13 +399,8 @@ export default function ItemFormScreen(props) {
           <Text style={st.bottomBtnText}>Lista de ítems</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[st.bottomBtn, st.bottomBtnActive]}
-          onPress={guardar}
-        >
-          <Text style={[st.bottomBtnText, st.bottomBtnTextActive]}>
-            Guardar
-          </Text>
+        <TouchableOpacity style={[st.bottomBtn, st.bottomBtnActive]} onPress={guardar}>
+          <Text style={[st.bottomBtnText, st.bottomBtnTextActive]}>Guardar</Text>
         </TouchableOpacity>
       </View>
 
@@ -474,10 +418,7 @@ export default function ItemFormScreen(props) {
               data={CATEGORY_LIST}
               keyExtractor={(item) => String(item.id)}
               renderItem={({ item: cat }) => (
-                <TouchableOpacity
-                  style={st.modalItem}
-                  onPress={() => selectCategory(cat)}
-                >
+                <TouchableOpacity style={st.modalItem} onPress={() => selectCategory(cat)}>
                   <Text style={st.modalItemText}>{cat.nombre}</Text>
                 </TouchableOpacity>
               )}
@@ -506,10 +447,7 @@ export default function ItemFormScreen(props) {
               data={productosDeCategoria}
               keyExtractor={(item, index) => String(index)}
               renderItem={({ item: nombre }) => (
-                <TouchableOpacity
-                  style={st.modalItem}
-                  onPress={() => selectProduct(nombre)}
-                >
+                <TouchableOpacity style={st.modalItem} onPress={() => selectProduct(nombre)}>
                   <Text style={st.modalItemText}>{nombre}</Text>
                 </TouchableOpacity>
               )}
@@ -524,7 +462,7 @@ export default function ItemFormScreen(props) {
         </View>
       </Modal>
 
-      {/* MODAL BODEGAS */}
+      {/* MODAL BODEGAS (SOLO ACTIVAS) */}
       <Modal
         visible={bodegaModalVisible}
         transparent
@@ -533,28 +471,26 @@ export default function ItemFormScreen(props) {
       >
         <View style={st.modalOverlay}>
           <View style={st.modalCard}>
-            <Text style={st.modalTitle}>Selecciona una bodega</Text>
+            <Text style={st.modalTitle}>Selecciona una bodega (activas)</Text>
+
             <FlatList
-              data={bodegas}
+              data={ACTIVE_BODEGAS}
               keyExtractor={(b) => String(b.id)}
               renderItem={({ item: b }) => (
-                <TouchableOpacity
-                  style={st.destItem}
-                  onPress={() => selectBodega(b)}
-                >
+                <TouchableOpacity style={st.destItem} onPress={() => selectBodega(b)}>
                   <Text style={st.destItemText}>{b.nombre}</Text>
-                  <Text
-                    style={{
-                      fontSize: 10,
-                      color: "#6b7280",
-                      marginTop: 2,
-                    }}
-                  >
+                  <Text style={{ fontSize: 10, color: "#6b7280", marginTop: 2 }}>
                     ID {b.id} · {b.ciudad || "-"}
                   </Text>
                 </TouchableOpacity>
               )}
+              ListEmptyComponent={
+                <Text style={{ paddingVertical: 12, color: "#6b7280", fontSize: 12 }}>
+                  No hay bodegas activas.
+                </Text>
+              }
             />
+
             <TouchableOpacity
               style={[st.btn, st.btnPrimary, { marginTop: 8 }]}
               onPress={() => setBodegaModalVisible(false)}
@@ -569,48 +505,17 @@ export default function ItemFormScreen(props) {
 }
 
 const st = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#f9fafb",
-  },
-  scrollContent: {
-    paddingHorizontal: 16,
-    paddingTop: 18,
-    paddingBottom: 140,
-  },
-  headerRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  headerBack: {
-    marginRight: 12,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  headerBackText: {
-    fontSize: 18,
-    color: "#2563eb",
-    fontWeight: "600",
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#111827",
-  },
-  label: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#374151",
-    marginBottom: 4,
-    marginTop: 12,
-  },
-  smallLabel: {
-    fontSize: 11,
-    fontWeight: "500",
-    color: "#4b5563",
-    marginBottom: 2,
-  },
+  container: { flex: 1, backgroundColor: "#f9fafb" },
+  scrollContent: { paddingHorizontal: 16, paddingTop: 18, paddingBottom: 140 },
+
+  headerRow: { flexDirection: "row", alignItems: "center", marginBottom: 12 },
+  headerBack: { marginRight: 12, paddingHorizontal: 8, paddingVertical: 4 },
+  headerBackText: { fontSize: 18, color: "#2563eb", fontWeight: "600" },
+  headerTitle: { fontSize: 18, fontWeight: "700", color: "#111827" },
+
+  label: { fontSize: 13, fontWeight: "600", color: "#374151", marginBottom: 4, marginTop: 12 },
+  smallLabel: { fontSize: 11, fontWeight: "500", color: "#4b5563", marginBottom: 2 },
+
   touchField: {
     borderWidth: 1,
     borderColor: "#e5e7eb",
@@ -619,13 +524,9 @@ const st = StyleSheet.create({
     paddingVertical: 10,
     backgroundColor: "#ffffff",
   },
-  touchFieldText: {
-    fontSize: 13,
-    color: "#111827",
-  },
-  placeholderText: {
-    color: "#9ca3af",
-  },
+  touchFieldText: { fontSize: 13, color: "#111827" },
+  placeholderText: { color: "#9ca3af" },
+
   input: {
     borderWidth: 1,
     borderColor: "#e5e7eb",
@@ -635,36 +536,16 @@ const st = StyleSheet.create({
     fontSize: 13,
     backgroundColor: "#ffffff",
   },
-  inputRow: {
-    flexDirection: "row",
-    gap: 8,
-    marginTop: 6,
-  },
-  inputGroup: {
-    flex: 1,
-  },
-  fieldLabelRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginTop: 12,
-  },
-  volBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 999,
-    backgroundColor: "#eff6ff",
-  },
-  volText: {
-    fontSize: 10,
-    color: "#1d4ed8",
-    fontWeight: "500",
-  },
-  helperText: {
-    fontSize: 11,
-    color: "#6b7280",
-    marginTop: 4,
-  },
+
+  inputRow: { flexDirection: "row", gap: 8, marginTop: 6 },
+  inputGroup: { flex: 1 },
+
+  fieldLabelRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 12 },
+  volBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999, backgroundColor: "#eff6ff" },
+  volText: { fontSize: 10, color: "#1d4ed8", fontWeight: "500" },
+
+  helperText: { fontSize: 11, color: "#6b7280", marginTop: 4 },
+
   bottomBar: {
     position: "absolute",
     left: 16,
@@ -683,23 +564,11 @@ const st = StyleSheet.create({
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 4 },
   },
-  bottomBtn: {
-    flex: 1,
-    paddingVertical: 7,
-    borderRadius: 999,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  bottomBtn: { flex: 1, paddingVertical: 7, borderRadius: 999, alignItems: "center", justifyContent: "center" },
   bottomBtnActive: { backgroundColor: "#2563eb" },
-  bottomBtnText: {
-    fontSize: 11,
-    color: "#6b7280",
-    fontWeight: "500",
-  },
-  bottomBtnTextActive: {
-    color: "#ffffff",
-    fontWeight: "600",
-  },
+  bottomBtnText: { fontSize: 11, color: "#6b7280", fontWeight: "500" },
+  bottomBtnTextActive: { color: "#ffffff", fontWeight: "600" },
+
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.4)",
@@ -707,48 +576,16 @@ const st = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 16,
   },
-  modalCard: {
-    width: "100%",
-    maxHeight: "80%",
-    backgroundColor: "#ffffff",
-    borderRadius: 16,
-    padding: 16,
-  },
-  modalTitle: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#111827",
-    marginBottom: 8,
-  },
-  modalItem: {
-    paddingVertical: 8,
-  },
-  modalItemText: {
-    fontSize: 13,
-    color: "#111827",
-  },
-  btn: {
-    paddingVertical: 8,
-    borderRadius: 999,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 4,
-  },
-  btnPrimary: {
-    backgroundColor: "#2563eb",
-  },
-  btnTxt: {
-    fontSize: 13,
-    color: "#ffffff",
-    fontWeight: "600",
-  },
-  destItem: {
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: "#e5e7eb",
-  },
-  destItemText: {
-    fontSize: 13,
-    color: "#111827",
-  },
+  modalCard: { width: "100%", maxHeight: "80%", backgroundColor: "#ffffff", borderRadius: 16, padding: 16 },
+  modalTitle: { fontSize: 15, fontWeight: "600", color: "#111827", marginBottom: 8 },
+
+  modalItem: { paddingVertical: 8 },
+  modalItemText: { fontSize: 13, color: "#111827" },
+
+  btn: { paddingVertical: 8, borderRadius: 999, alignItems: "center", justifyContent: "center", marginTop: 4 },
+  btnPrimary: { backgroundColor: "#2563eb" },
+  btnTxt: { fontSize: 13, color: "#ffffff", fontWeight: "600" },
+
+  destItem: { paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: "#e5e7eb" },
+  destItemText: { fontSize: 13, color: "#111827" },
 });

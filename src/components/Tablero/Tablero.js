@@ -1,3 +1,4 @@
+/*C:\Users\japf2\Desktop\Tesis Cubicaje\Proyecto\proyectoPrincipal\cubicajeMobile-master\src\components\Tablero\Tablero.js*/
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
@@ -525,8 +526,8 @@ export default function Tablero({
 
 const styles = StyleSheet.create({
   wrapper: {
-    marginTop: 8,
-    padding: 10,
+    marginTop: 10,
+    padding: 12,
     backgroundColor: "#f9fafb",
     borderRadius: 12,
     borderWidth: 1,
@@ -534,7 +535,7 @@ const styles = StyleSheet.create({
   },
 
   // ✅ SIN gap: Android a veces da problemas con gap
-  modesRow: { flexDirection: "row", marginBottom: 10 },
+  modesRow: { flexDirection: "row", marginBottom: 20 }, // ✅ más aire
   modeChipGap: { marginRight: 8 },
 
   // ✅ Más alto + centrado: asegura que el texto se vea
@@ -562,7 +563,7 @@ const styles = StyleSheet.create({
   },
   modeChipTextSelected: { color: "#fff" },
 
-  modeHelp: { fontSize: 11, color: "#6b7280", marginBottom: 8 },
+  modeHelp: { fontSize: 11, color: "#6b7280", marginBottom: 20 }, // ✅ más aire
 
   board: {
     position: "relative",
@@ -584,8 +585,8 @@ const styles = StyleSheet.create({
   cell: { borderWidth: 0.5 },
 
   emptyBox: {
-    marginTop: 8,
-    padding: 10,
+    marginTop: 10,
+    padding: 12,
     borderRadius: 10,
     borderWidth: 1,
     borderColor: "#e5e7eb",

@@ -1,3 +1,5 @@
+/*C:\Users\japf2\Desktop\Tesis Cubicaje\Proyecto\proyectoPrincipal\cubicajeMobile-master\src\screens\Bodega\BodegaMapScreen.js*/
+
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,

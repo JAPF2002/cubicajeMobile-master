@@ -46,7 +46,7 @@ export default function Bodega3DScreen({ route }) {
   const layout = bodega?.layout || layoutParam || null;
   const layoutAncho = Number(layout?.ancho ?? 0) || 0;
   const layoutLargo = Number(layout?.largo ?? 0) || 0;
-  const layoutMapa = layout?.mapa_json || {};
+  const layoutMapa = useMemo(() => layout?.mapa_json ?? {}, [layout?.mapa_json]);
 
   useEffect(() => {
     mountedRef.current = true;

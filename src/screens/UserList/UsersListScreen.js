@@ -1,5 +1,5 @@
 // src/screens/UserList/UsersListScreen.js
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -9,7 +9,10 @@ import {
   StyleSheet,
   Alert,
 } from "react-native";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useFocusEffect } from "@react-navigation/native";
+import { getUsuarios, changeUserState, changeUserRole } from "../../features/api";
+import { set } from "react-native-reanimated";
+import { useApp } from "../../store";
 
 const COLORS = {
   bg: "#f8fafc",
@@ -29,20 +32,8 @@ const DEMO_CURRENT_USER = {
   correo: "admin@demo.cl",
   rut: "11111111-1",
   rol: "admin",
-  active: true,
+  estado: true,
 };
-
-const DEMO_USERS = [
-  DEMO_CURRENT_USER,
-  {
-    id: 2,
-    nombre: "Empleado Demo",
-    correo: "empleado@demo.cl",
-    rut: "22222222-2",
-    rol: "empleado",
-    active: true,
-  },
-];
 
 function StatusChip({ active }) {
   const bg = active ? COLORS.success : COLORS.danger;
@@ -82,6 +73,7 @@ function UserCard({
   onToggleConfirm,
   onDeleteConfirm,
   onToggleRoleConfirm,
+  onEditPress
 }) {
   return (
     <View style={styles.card}>
@@ -93,7 +85,7 @@ function UserCard({
         </View>
         <View style={{ alignItems: "flex-end" }}>
           <RoleChip role={user.rol} />
-          <StatusChip active={user.active} />
+          <StatusChip active={user.estado} />
         </View>
       </View>
 
@@ -103,27 +95,30 @@ function UserCard({
           onPress={onToggleConfirm}
         >
           <Text style={styles.btnToggleText}>
-            {user.active ? "Desactivar" : "Activar"}
+            {user.estado ? "Desactivar" : "Activar"}
           </Text>
         </TouchableOpacity>
 
         {onToggleRoleConfirm && (
-          <TouchableOpacity
-            style={[styles.btn, styles.btnRole]}
-            onPress={onToggleRoleConfirm}
-          >
-            <Text style={styles.btnRoleText}>
-              {user.rol === "admin" ? "Quitar admin" : "Hacer admin"}
-            </Text>
-          </TouchableOpacity>
-        )}
+          <>
+            <TouchableOpacity
+              style={[styles.btn, styles.btnRole]}
+              onPress={onToggleRoleConfirm}
+            >
+              <Text style={styles.btnRoleText}>
+                {user.rol === "admin" ? "Quitar admin" : "Hacer admin"}
+              </Text>
+            </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[styles.btn, styles.btnDanger]}
-          onPress={onDeleteConfirm}
-        >
-          <Text style={styles.btnDangerText}>Eliminar</Text>
-        </TouchableOpacity>
+            {/* BOTÓN SOLO VISUAL */}
+            <TouchableOpacity
+              style={[styles.btn, styles.btnEdit]}
+              onPress={onEditPress}
+            >
+              <Text style={styles.btnEditText}>Editar</Text>
+            </TouchableOpacity>
+          </>
+        )}
       </View>
     </View>
   );
@@ -164,7 +159,7 @@ function StatusFilter({ value, onChange }) {
 
 export default function UsersListScreen(props) {
   const navigation = useNavigation();
-
+  const {userId, userRole} = useApp();
   // si el padre pasa props, las usamos; si no, usamos navigation
   const goToMenu =
     typeof props.goToMenu === "function"
@@ -176,13 +171,51 @@ export default function UsersListScreen(props) {
       ? props.goToNewUser
       : () => navigation.navigate("UserForm"); // ajusta el nombre si tu ruta se llama distinto
 
-  const [currentUser] = useState(DEMO_CURRENT_USER);
-  const [users, setUsers] = useState(DEMO_USERS);
-
+  const [currentUser] = useState({id_usuario: userId, rol: userRole});
+  const [users, setUsers] = useState([]);
+  const [userLoading, setUserLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
 
   const isAdmin = currentUser?.rol === "admin";
+
+  const getUsers = async () => {
+    setUserLoading(true);
+    try {
+      const resp = await getUsuarios();
+      setUsers(resp.usuarios);
+      console.log(resp.usuarios);
+    } catch (error) {
+      console.log("Error al cargar usuarios:", error);
+      setUsers([]);
+    } finally {
+      setUserLoading(false);
+    }
+  };
+
+  const handleChangeUserState = async (id_usuario) => {
+    const resp = await changeUserState(id_usuario);
+    if(resp.ok){
+      setUsers((prev) =>
+        prev.map((u) =>
+          u.id_usuario === id_usuario ? { ...u, estado: resp.nuevo_estado } : u
+        )
+      );
+    }
+  }
+
+  const handleChangeUserRole = async (id_usuario, new_role) => {
+    const resp = await changeUserRole(id_usuario, new_role);
+    if(resp.ok){
+      setUsers((prev) =>
+        prev.map((u) =>
+          u.id_usuario === id_usuario ? { ...u, rol: new_role } : u
+        )
+      );
+    } else{
+      Alert.alert("Error", resp.authMensaje || "No se pudo cambiar el rol.");
+    }
+  }
 
   const filtered = useMemo(() => {
     return users.filter((u) => {
@@ -199,8 +232,8 @@ export default function UsersListScreen(props) {
         return false;
       }
 
-      if (filter === "active" && !u.active) return false;
-      if (filter === "inactive" && u.active) return false;
+      if (filter === "active" && !u.estado) return false;
+      if (filter === "inactive" && u.estado) return false;
       if (filter === "admin" && u.rol !== "admin") return false;
       if (filter === "empleado" && u.rol !== "empleado") return false;
 
@@ -209,44 +242,25 @@ export default function UsersListScreen(props) {
   }, [users, search, filter]);
 
   const confirmToggle = (user) => {
-    const action = user.active ? "desactivar" : "activar";
+    const action = user.estado ? "desactivar" : "activar";
     Alert.alert(
-      user.active ? "Desactivar usuario" : "Activar usuario",
+      user.estado ? "Desactivar usuario" : "Activar usuario",
       `¿Seguro que quieres ${action} la cuenta de "${user.nombre}"?`,
       [
         { text: "Cancelar", style: "cancel" },
         {
           text: "Confirmar",
           style: "destructive",
-          onPress: () =>
-            setUsers((prev) =>
-              prev.map((u) =>
-                u.id === user.id ? { ...u, active: !u.active } : u
-              )
-            ),
+          onPress: () => 
+            handleChangeUserState(user.id_usuario)
         },
       ]
     );
   };
 
-  const confirmDelete = (user) => {
-    Alert.alert(
-      "Eliminar usuario",
-      `Esta acción no se puede deshacer.\n\n¿Eliminar a "${user.nombre}"?`,
-      [
-        { text: "Cancelar", style: "cancel" },
-        {
-          text: "Eliminar",
-          style: "destructive",
-          onPress: () =>
-            setUsers((prev) => prev.filter((u) => u.id !== user.id)),
-        },
-      ]
-    );
-  };
 
   const confirmToggleRole = (user) => {
-    if (user.id === currentUser?.id) {
+    if (user.id_usuario === currentUser?.id_usuario) {
       Alert.alert("Acción no permitida", "No puedes cambiar tu propio rol.");
       return;
     }
@@ -261,11 +275,7 @@ export default function UsersListScreen(props) {
             text: "Confirmar",
             style: "destructive",
             onPress: () =>
-              setUsers((prev) =>
-                prev.map((u) =>
-                  u.id === user.id ? { ...u, rol: "empleado" } : u
-                )
-              ),
+              handleChangeUserRole(user.id_usuario, "empleado")
           },
         ]
       );
@@ -279,16 +289,18 @@ export default function UsersListScreen(props) {
             text: "Confirmar",
             style: "destructive",
             onPress: () =>
-              setUsers((prev) =>
-                prev.map((u) =>
-                  u.id === user.id ? { ...u, rol: "admin" } : u
-                )
-              ),
+              handleChangeUserRole(user.id_usuario, "admin")
           },
         ]
       );
     }
   };
+
+  useFocusEffect(
+    useCallback(() => {
+      getUsers();
+    }, [])
+  );
 
   return (
     <View style={styles.screen}>
@@ -304,10 +316,13 @@ export default function UsersListScreen(props) {
       />
 
       <StatusFilter value={filter} onChange={setFilter} />
-
-      <FlatList
+      
+      {
+        userLoading ? (
+          <Text style={styles.emptyText}>Cargando usuarios...</Text>
+        ) : <FlatList
         data={filtered}
-        keyExtractor={(u) => String(u.id)}
+        keyExtractor={(u) => String(u.id_usuario)}
         renderItem={({ item }) => (
           <UserCard
             user={item}
@@ -316,6 +331,7 @@ export default function UsersListScreen(props) {
             onToggleRoleConfirm={
               isAdmin ? () => confirmToggleRole(item) : undefined
             }
+            onEditPress={() => navigation.navigate("EditUserCreds", {id_usuario: item.id_usuario})}
           />
         )}
         ListEmptyComponent={
@@ -323,7 +339,7 @@ export default function UsersListScreen(props) {
         }
         contentContainerStyle={{ paddingBottom: 130 }}
       />
-
+      }
       <View style={styles.bottomBar}>
         <TouchableOpacity style={styles.bottomBtn} onPress={goToMenu}>
           <Text style={styles.bottomBtnText}>Menú principal</Text>
@@ -382,6 +398,11 @@ const styles = StyleSheet.create({
   btnToggleText: { fontSize: 11, color: "#ffffff", fontWeight: "600" },
   btnRole: { backgroundColor: "#1d4ed8" },
   btnRoleText: { fontSize: 11, color: "#ffffff", fontWeight: "600" },
+
+  // NUEVO (solo visual)
+  btnEdit: { backgroundColor: COLORS.primarySoft, borderWidth: 1, borderColor: COLORS.border },
+  btnEditText: { fontSize: 11, color: COLORS.primary, fontWeight: "700" },
+
   btnDanger: { backgroundColor: COLORS.danger },
   btnDangerText: { fontSize: 11, color: "#ffffff", fontWeight: "600" },
   filterRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 6 },

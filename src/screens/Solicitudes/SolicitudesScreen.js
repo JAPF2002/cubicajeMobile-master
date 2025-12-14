@@ -55,6 +55,7 @@ function unwrapApi(res) {
 }
 
 function mapSolicitudRow(row) {
+  const revisorNombre = row.revisor_nombre ?? null;
   return {
     id: Number(row.id_solicitud ?? row.id ?? 0),
     nombreBodega: row.nombre_sugerido_bodega ?? row.nombreBodega ?? "",
@@ -66,6 +67,7 @@ function mapSolicitudRow(row) {
       row.nombre_empleado ??
       "Empleado",
     status: row.estado ?? row.status ?? "pendiente",
+    revisorNombre
   };
 }
 
@@ -148,6 +150,9 @@ function RequestCardEmployee({ req }) {
       </View>
       <Text style={styles.cardText}>Motivo: {req.detalle}</Text>
       <Text style={styles.cardMeta}>ID solicitud: {req.id}</Text>
+      {req.revisorNombre ? (
+        <Text style={styles.cardMeta}>Revisado por: {req.revisorNombre}</Text>
+      ) : null}
     </View>
   );
 }
@@ -174,18 +179,8 @@ function BottomBar({ goToMenu, isAdmin }) {
 /* --- SCREEN --- */
 export default function SolicitudesScreen() {
   const navigation = useNavigation();
-  const { currentUser } = useApp();
-
-  const roleKey = String(currentUser?.role || currentUser?.rol || "").toLowerCase();
-  const isAdmin = roleKey === "admin";
-
-  const userId = Number(
-    currentUser?.id ||
-      currentUser?.id_usuario ||
-      currentUser?.idUsuario ||
-      currentUser?.id_empleado ||
-      0
-  );
+  const { currentUser, userRole, userId } = useApp();
+  const isAdmin = userRole === "admin";
 
   const [requests, setRequests] = useState([]);
   const [titulo, setTitulo] = useState("");
@@ -218,6 +213,7 @@ export default function SolicitudesScreen() {
         : [];
 
       setRequests(list.map(mapSolicitudRow));
+      console.log(requests)
     } catch (e) {
       setRequests([]);
       setMsg(e?.message || "No se pudieron cargar las solicitudes.");
@@ -276,7 +272,7 @@ export default function SolicitudesScreen() {
   const handleSetStatus = async (id, estado) => {
     setMsg("");
     try {
-      const res = await updateSolicitudEstado(id, estado);
+      const res = await updateSolicitudEstado(id, estado, userId);
       unwrapApi(res);
       await loadRequests();
     } catch (e) {

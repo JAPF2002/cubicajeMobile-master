@@ -1,13 +1,17 @@
 // src/screens/Perfil/ProfileScreen.js
-import React, { useState } from "react";
+import React, { useCallback, useState, useMemo } from "react";
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
   StyleSheet,
+  Alert,
 } from "react-native";
-import { useNavigation } from "@react-navigation/native";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
+import { useApp } from "../../store";
+import { getUserById, updateUserById, updatePassword } from "../../features/api";
+import { set } from "react-native-reanimated";
 
 const COLORS = {
   bg: "#0f172a",
@@ -24,17 +28,31 @@ const COLORS = {
 
 export default function ProfileScreen() {
   const navigation = useNavigation();
-
+  const {userId} = useApp();
   // Datos DEMO por ahora (sin store, solo UI)
   const [nombre, setNombre] = useState("Empleado Demo");
   const [correo, setCorreo] = useState("empleado@demo.cl");
-  const [role] = useState("empleado"); // "admin" | "empleado"
+  const [role, setRole] = useState("empleado"); // "admin" | "empleado"
 
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [editing, setEditing] = useState(false);
   const [savedMsg, setSavedMsg] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
+
+
+const pwdRules = useMemo(() => {
+  const pwd = newPassword || "";
+  return {
+    minLen: pwd.length >= 12,
+    upper: /[A-Z]/.test(pwd),
+    lower: /[a-z]/.test(pwd),
+    number: /[0-9]/.test(pwd),
+    symbol: /[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?`~]/.test(pwd),
+  };
+}, [newPassword]);
+
+
 
   const validatePassword = (pwd) => {
     if (pwd.length < 12) return "La contraseña debe tener al menos 12 caracteres.";
@@ -100,12 +118,99 @@ export default function ProfileScreen() {
     navigation.navigate("Menu");
   };
 
+  const getUser = async (id_usuario) => {
+    try {
+      const {usuario} = await getUserById(id_usuario);
+      setNombre(usuario.nombre);
+      setCorreo(usuario.correo);
+      setRole(usuario.rol);
+    } catch (error) {
+      console.log("Error al obtener datos del usuario:", error);
+      Alert.alert("Error", "No se pudieron cargar los datos del usuario.");
+    }
+  }
+
+  const handleUpdateUser = async () => {    
+    setErrorMsg("");
+    setSavedMsg("");
+
+    if (!nombre.trim() || !correo.trim()) {
+      setErrorMsg("Nombre y correo son obligatorios.");
+      return;
+    }
+
+    try {
+      const updatedData = {
+        nombre,
+        correo
+      };
+      const response = await updateUserById(userId, updatedData);
+      console.log("Respuesta actualización usuario =>", response);
+      if (!response.error) {
+        Alert.alert("Éxito", "Datos del usuario actualizados correctamente.");
+        setSavedMsg("Datos actualizados correctamente.");
+        setTimeout(() => setSavedMsg(""), 2000);
+      } else {
+        setErrorMsg("Error al actualizar los datos. Intenta nuevamente.");
+        Alert.alert(response.authMensaje || "No se pudo crear el usuario. Intenta nuevamente.")
+        return;
+      }
+    } catch (error) {
+      Alert.alert("Error", "No se pudieron actualizar los datos del usuario.");
+    }
+  }
+
+  const handleUpdatePassword = async () => {
+    console.log("Intentando cambiar contraseña...");
+    setErrorMsg("");
+    setSavedMsg("");
+    if (!newPassword || !confirmPassword) {
+      setErrorMsg("Debes ingresar la nueva contraseña en ambos campos.");
+      Alert.alert("Error", "Debes ingresar la nueva contraseña en ambos campos.");
+      return;
+    }
+    const pwdError = validatePassword(newPassword);
+    if (pwdError) {
+      setErrorMsg(pwdError);
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setErrorMsg("Las contraseñas no coinciden.");
+      Alert.alert("Error", "Las contraseñas no coinciden.");
+      return;
+    }
+
+    try {
+      const passwordData = {
+        password: newPassword
+      };
+      const response = await updatePassword(passwordData);
+      console.log("Respuesta cambio contraseña =>", response);
+      if (!response.error) {
+        Alert.alert("Éxito", "Contraseña actualizada correctamente.");
+        setSavedMsg("Contraseña actualizada correctamente.");
+        setTimeout(() => setSavedMsg(""), 2000);
+      } else {
+        setErrorMsg("Error al cambiar la contraseña. Intenta nuevamente.");
+        Alert.alert("Error", "Error al cambiar la contraseña. Intenta nuevamente.");
+      }
+    } catch (error) {
+      Alert.alert("Error", "No se pudo cambiar la contraseña.");
+    }
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      getUser(userId);
+    }, [userId])
+  );
+
   return (
     <View style={styles.screen}>
       <View style={styles.content}>
         <View style={styles.headerRow}>
           <View>
-            <Text style={styles.title}>Mi perfil</Text>
+            <Text style={styles.title}>Editar usuario</Text>
             <Text style={styles.subtitle}>
               Gestiona los datos de tu cuenta.
             </Text>
@@ -130,66 +235,82 @@ export default function ProfileScreen() {
 
           {editing ? (
             <>
-              <Text style={styles.label}>Nombre</Text>
-              <TextInput
-                style={styles.input}
-                value={nombre}
-                onChangeText={setNombre}
-                placeholder="Tu nombre"
-                placeholderTextColor={COLORS.textSoft}
-              />
+              <>
+                <Text style={styles.label}>Nombre</Text>
+                <TextInput
+                  style={styles.input}
+                  value={nombre}
+                  onChangeText={setNombre}
+                  placeholder="Tu nombre"
+                  placeholderTextColor={COLORS.textSoft}
+                />
 
-              <Text style={styles.label}>Correo</Text>
-              <TextInput
-                style={styles.input}
-                value={correo}
-                onChangeText={setCorreo}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                placeholder="tu@correo.cl"
-                placeholderTextColor={COLORS.textSoft}
-              />
+                <Text style={styles.label}>Correo</Text>
+                <TextInput
+                  style={styles.input}
+                  value={correo}
+                  onChangeText={setCorreo}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  placeholder="tu@correo.cl"
+                  placeholderTextColor={COLORS.textSoft}
+                />
 
-              <Text style={styles.label}>Nueva contraseña</Text>
-              <TextInput
-                style={styles.input}
-                value={newPassword}
-                onChangeText={setNewPassword}
-                secureTextEntry
-                placeholder="Opcional, si deseas cambiarla"
-                placeholderTextColor={COLORS.textSoft}
-              />
+                {/* SOLO VISUAL */}
+                <TouchableOpacity style={styles.fieldActionBtn} onPress={handleUpdateUser}>
+                  <Text style={styles.fieldActionBtnText}>Actualizar datos</Text>
+                </TouchableOpacity>
+              </>
 
-              <Text style={styles.label}>Confirmar nueva contraseña</Text>
-              <TextInput
-                style={styles.input}
-                value={confirmPassword}
-                onChangeText={setConfirmPassword}
-                secureTextEntry
-                placeholder="Repite la nueva contraseña"
-                placeholderTextColor={COLORS.textSoft}
-              />
+              <>
+                <Text style={styles.label}>Nueva contraseña</Text>
+                <TextInput
+                  style={styles.input}
+                  value={newPassword}
+                  onChangeText={setNewPassword}
+                  secureTextEntry
+                  placeholder="Opcional, si deseas cambiarla"
+                  placeholderTextColor={COLORS.textSoft}
+                />
 
-              <View style={styles.requirementsBox}>
-                <Text style={styles.requireTitle}>
-                  Requisitos para cambiar la contraseña:
-                </Text>
-                <Text style={styles.requireItem}>
-                  • Mínimo 12 caracteres.
-                </Text>
-                <Text style={styles.requireItem}>
-                  • Al menos una letra mayúscula (A-Z).
-                </Text>
-                <Text style={styles.requireItem}>
-                  • Al menos una letra minúscula (a-z).
-                </Text>
-                <Text style={styles.requireItem}>
-                  • Al menos un número (0-9).
-                </Text>
-                <Text style={styles.requireItem}>
-                  • Al menos un símbolo especial (!@#$%^&*...).
-                </Text>
-              </View>
+                <Text style={styles.label}>Confirmar nueva contraseña</Text>
+                <TextInput
+                  style={styles.input}
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                  secureTextEntry
+                  placeholder="Repite la nueva contraseña"
+                  placeholderTextColor={COLORS.textSoft}
+                />
+
+                {/* SOLO VISUAL */}
+                <TouchableOpacity
+                  style={[styles.fieldActionBtn, { marginTop: 10 }]}
+                  onPress={handleUpdatePassword}
+                >
+                  <Text style={styles.fieldActionBtnText}>Cambiar contraseña</Text>
+                </TouchableOpacity>
+
+                  <View style={styles.requirementsBox}>
+                    <Text style={styles.requireTitle}>Requisitos para cambiar la contraseña:</Text>
+
+                    <Text style={[styles.requireItem, pwdRules.minLen ? styles.requireOk : styles.requireBad]}>
+                      • Mínimo 12 caracteres.
+                    </Text>
+                    <Text style={[styles.requireItem, pwdRules.upper ? styles.requireOk : styles.requireBad]}>
+                      • Al menos una letra mayúscula (A-Z).
+                    </Text>
+                    <Text style={[styles.requireItem, pwdRules.lower ? styles.requireOk : styles.requireBad]}>
+                      • Al menos una letra minúscula (a-z).
+                    </Text>
+                    <Text style={[styles.requireItem, pwdRules.number ? styles.requireOk : styles.requireBad]}>
+                      • Al menos un número (0-9).
+                    </Text>
+                    <Text style={[styles.requireItem, pwdRules.symbol ? styles.requireOk : styles.requireBad]}>
+                      • Al menos un símbolo especial (!@#$%^&*...).
+                    </Text>
+                  </View>
+              </>
             </>
           ) : (
             <>
@@ -226,12 +347,7 @@ export default function ProfileScreen() {
               <Text style={styles.bottomBtnGhostText}>Cancelar</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[styles.bottomBtn, styles.bottomBtnPrimary]}
-              onPress={handleSave}
-            >
-              <Text style={styles.bottomBtnText}>Guardar cambios</Text>
-            </TouchableOpacity>
+            {/* BOTÓN "GUARDAR CAMBIOS" ELIMINADO */}
           </>
         ) : (
           <>
@@ -314,6 +430,24 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: COLORS.text,
   },
+
+  // Botoncitos SOLO VISUALES (sin lógica)
+  fieldActionBtn: {
+    alignSelf: "flex-end",
+    marginTop: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 12,
+    backgroundColor: COLORS.primarySoft,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  fieldActionBtnText: {
+    color: "#ffffff",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+
   infoRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -331,7 +465,7 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     marginBottom: 2,
   },
-  requireItem: { fontSize: 10, color: COLORS.danger, marginBottom: 1 },
+  requireItem: { fontSize: 10, marginBottom: 1 },
   errorText: {
     marginTop: 8,
     fontSize: 11,
@@ -383,4 +517,8 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "600",
   },
+
+  requireOk: { color: COLORS.accent },
+  requireBad: { color: COLORS.danger },
+
 });

@@ -1,4 +1,4 @@
-/*C:\Users\japf2\Desktop\Tesis Cubicaje\Proyecto\proyectoPrincipal\cubicajeMobile-master\src\components\Tablero\Tablero.js*/
+/* src/components/Tablero/Tablero.js */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
@@ -140,6 +140,8 @@ export default function Tablero({
 
   // ✅ render: solo refrescamos filas tocadas
   const [dirtyRows, setDirtyRows] = useState({});
+  const [globalTick, setGlobalTick] = useState(0); // ✅ NUEVO: forzar repintado global al cargar mapa
+
   const rafRef = useRef(null);
   const pendingRowsRef = useRef(new Map());
   const pendingNeedsSyncRef = useRef(false);
@@ -220,6 +222,9 @@ export default function Tablero({
     }
 
     if (typeof onGridMapChange === "function") onGridMapChange(mapObjRef.current);
+
+    // ✅ MUY IMPORTANTE: fuerza que todas las filas recalculen una vez
+    setGlobalTick((t) => t + 1);
 
     requestAnimationFrame(() => {
       measureBoard();
@@ -429,11 +434,12 @@ export default function Tablero({
         blockedRef={blockedRef}
         onTap={onTapCell}
         onLongStart={onLongStart}
-        dirtyTick={dirtyRows[r] || 0}
+        // ✅ suma globalTick para forzar repintado inicial
+        dirtyTick={(dirtyRows[r] || 0) + globalTick}
         suppressTapRef={suppressTapRef}
       />
     ),
-    [cols, cellSize, onTapCell, onLongStart, dirtyRows]
+    [cols, cellSize, onTapCell, onLongStart, dirtyRows, globalTick]
   );
 
   if (!cols || !rows) {
@@ -446,7 +452,6 @@ export default function Tablero({
 
   return (
     <View style={styles.wrapper}>
-      {/* ✅ BOTONES MODO (ahora sí con texto visible) */}
       <View style={styles.modesRow}>
         {Object.entries(MODOS).map(([key, cfg], i, arr) => {
           const selected = modo === key;
@@ -459,7 +464,7 @@ export default function Tablero({
               style={[
                 styles.modeChip,
                 selected && styles.modeChipSelected,
-                !isLast && styles.modeChipGap, // ✅ evita usar gap
+                !isLast && styles.modeChipGap,
               ]}
               activeOpacity={0.85}
             >
@@ -494,7 +499,12 @@ export default function Tablero({
             pointerEvents="none"
             style={[
               styles.boxOverlay,
-              { left: boxOverlay.left, top: boxOverlay.top, width: boxOverlay.width, height: boxOverlay.height },
+              {
+                left: boxOverlay.left,
+                top: boxOverlay.top,
+                width: boxOverlay.width,
+                height: boxOverlay.height,
+              },
             ]}
           />
         ) : null}
@@ -534,11 +544,9 @@ const styles = StyleSheet.create({
     borderColor: "#e5e7eb",
   },
 
-  // ✅ SIN gap: Android a veces da problemas con gap
-  modesRow: { flexDirection: "row", marginBottom: 20 }, // ✅ más aire
+  modesRow: { flexDirection: "row", marginBottom: 20 },
   modeChipGap: { marginRight: 8 },
 
-  // ✅ Más alto + centrado: asegura que el texto se vea
   modeChip: {
     flex: 1,
     minHeight: 36,
@@ -553,7 +561,6 @@ const styles = StyleSheet.create({
   },
   modeChipSelected: { backgroundColor: "#2563eb", borderColor: "#2563eb" },
 
-  // ✅ Text bien visible en Android
   modeChipText: {
     fontSize: 13,
     color: "#111827",
@@ -563,7 +570,7 @@ const styles = StyleSheet.create({
   },
   modeChipTextSelected: { color: "#fff" },
 
-  modeHelp: { fontSize: 11, color: "#6b7280", marginBottom: 20 }, // ✅ más aire
+  modeHelp: { fontSize: 11, color: "#6b7280", marginBottom: 20 },
 
   board: {
     position: "relative",

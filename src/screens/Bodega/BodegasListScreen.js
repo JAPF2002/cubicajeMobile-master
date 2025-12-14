@@ -1,5 +1,5 @@
 // cubicajeMobile-master/src/screens/Bodega/BodegasListScreen.js
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -8,10 +8,10 @@ import {
   Alert,
   FlatList,
   StyleSheet,
-  ActivityIndicator,
+  ActivityIndicator
 } from "react-native";
 import { useApp } from "../../store";
-
+import { useFocusEffect } from "@react-navigation/native";
 export default function BodegasListScreen(props) {
   const { goToMenu, goToBodegaFormNew, goToBodegaFormEdit, navigation } = props;
 
@@ -19,11 +19,11 @@ export default function BodegasListScreen(props) {
     bodegas,
     setBodegaActive,
     metricsOf,
-    currentUser,
     syncBodegasFromApi,
+    userRole
   } = useApp();
 
-  const isAdmin = currentUser?.role === "admin";
+  const isAdmin = userRole === "admin";
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all"); // all | active | inactive
@@ -31,25 +31,45 @@ export default function BodegasListScreen(props) {
   const [loading, setLoading] = useState(false);
 
   // Cargar bodegas desde la API al entrar a la pantalla
-  useEffect(() => {
-    const cargar = async () => {
-      try {
-        setLoading(true);
-        await syncBodegasFromApi();
-      } catch (err) {
-        console.log("[BodegasListScreen] error sync:", err);
-        Alert.alert(
-          "Error",
-          err?.message ||
-            "No se pudieron cargar las bodegas desde el servidor."
-        );
-      } finally {
-        setLoading(false);
-      }
-    };
+  // useEffect(() => {
+  //   const cargar = async () => {
+  //     try {
+  //       setLoading(true);
+  //       await syncBodegasFromApi();
+  //     } catch (err) {
+  //       console.log("[BodegasListScreen] error sync:", err);
+  //       Alert.alert(
+  //         "Error",
+  //         err?.message ||
+  //           "No se pudieron cargar las bodegas desde el servidor."
+  //       );
+  //     } finally {
+  //       setLoading(false);
+  //     }
+  //   };
 
-    cargar();
-  }, []);
+  //   cargar();
+  // }, []);
+
+  const getBodegas = async () => {
+    try {
+      setLoading(true)
+      await syncBodegasFromApi();
+    } catch (error) {
+      console.log("[BodegasListScreen] error sync:", err);
+      Alert.alert(
+      "Error", err?.message || "No se pudieron cargar las bodegas desde el servidor."
+      );  
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useFocusEffect(
+    useCallback(() => {
+      getBodegas();
+    }, [])
+  );
 
   const irMenu = () => {
     if (typeof goToMenu === "function") return goToMenu();

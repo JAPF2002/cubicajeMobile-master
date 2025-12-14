@@ -15,6 +15,8 @@ import UserFormScreen from "../screens/UserList/UserFormScreen";
 import UsersListScreen from "../screens/UserList/UsersListScreen";
 import MovimientosScreen from "../screens/Movimientos/MovimientosScreen";
 import InformeScreen from "../screens/Movimientos/InformeScreen";
+import EditUserCredsScreenUI from "../screens/UserList/EditUserCredsScreenUI";
+
 
 // Bodega 3D
 import Bodega3DScreen from "../features/bodega3d/Bodega3DScreen";
@@ -42,6 +44,8 @@ export default function AppStack() {
       <Stack.Screen name="AdminUsers" component={UsersListScreen} />
       <Stack.Screen name="UsersList" component={UsersListScreen} />
       <Stack.Screen name="UserForm" component={UserFormScreen} />
+      <Stack.Screen name="EditUserCreds" component={EditUserCredsScreenUI} />
+
       
 
       {/* Vista 3D de Bodega */}

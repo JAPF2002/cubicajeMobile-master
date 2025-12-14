@@ -1,6 +1,7 @@
 // C:\Users\japf2\Desktop\Tesis Cubicaje\Proyecto\proyectoPrincipal\cubicajeMobile-master\src\store\index.js
 import React, {
   createContext,
+  use,
   useCallback,
   useContext,
   useEffect,
@@ -26,7 +27,12 @@ import {
   getCategories,
   moveItemQty,
   getMovimientos, // ✅ NUEVO
+  loginUser,
+  saveNewUser
 } from "../features/api";
+import { log, set } from "react-native-reanimated";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { jwtDecode } from "jwt-decode";
 
 // --------- Usuarios demo ---------
 const adminUserDemo = {
@@ -73,7 +79,7 @@ function nextId(list) {
 const normalizeBodegaRow = (row) => ({
   id: Number(row.id_bodega ?? row.id ?? 0),
   nombre: row.nombre ?? "",
-  ciudad: row.ciudad ?? "",
+  ciudad: row.nombre_ciudad ?? "",
   direccion: row.direccion ?? "",
   ancho: Number(row.ancho ?? 0),
   largo: Number(row.largo ?? 0),
@@ -274,16 +280,15 @@ const reloadMovimientos = useCallback(async (opts = {}) => {
             layoutMapaObj = null;
           }
         }
-
         return {
           id: Number(row.id_bodega ?? row.id),
           nombre: row.nombre || "",
-          ciudad: row.ciudad || "",
+          ciudad: row.nombre_ciudad || "",
           direccion: row.direccion || "",
           ancho: Number(row.ancho || 0),
           largo: Number(row.largo || 0),
           alto: Number(row.alto || 0),
-
+          id_ciudad: row.ciudad,
           // estado activo (acepta activo o is_active)
           active:
             row.activo === 1 ||
@@ -330,11 +335,12 @@ const reloadMovimientos = useCallback(async (opts = {}) => {
 
   const saveBodega = async (bodega) => {
     const isUpdate = !!bodega.id;
-    const userId = state.currentUser?.id ?? null;
-
+    //const userId = state.currentUser?.id ?? null;
+    console.log("¿¿¿¿¿¿ENTRE???\n\n\n\n\n\n")
+    console.log("\n\n\nsaveBodega: ", bodega)
     const payload = {
       nombre: (bodega.nombre || "").trim(),
-      ciudad: (bodega.ciudad || "").trim(),
+      ciudad: (bodega.id_ciudad || ""),
       direccion: (bodega.direccion || "").trim(),
       ancho: Number(bodega.ancho) || 0,
       largo: Number(bodega.largo) || 0,
@@ -601,6 +607,44 @@ const egresarItemPartial = async ({ id, bodegaId, cantidad }) => {
 
   // ---------- USUARIOS / AUTH ----------
 
+  const [userLoading, setUserLoading] = useState(false);
+  const [userToken, setUserToken] = useState(null);
+  const [userRole, setUserRole] = useState(null);
+  const [userId, setUserId] = useState(null);
+  const [userNombre, setUserNombre] = useState(null);
+
+  const login = async (rut, password) => {
+    const credentials = { rut, password };
+    try {
+      setUserLoading(true);
+      const res = await loginUser(credentials); // Llama a la API para autenticar
+      const data = res?.body ?? res;
+      console.log("[login] respuesta loginUser:", res);
+      if (res?.error) {
+        throw new Error(String(res?.body?.message || res?.body || "Error en login"));
+      } else {
+        // Suponiendo que la respuesta contiene token, role e id
+        setUserToken(data.token);
+        setUserRole(data.rol);
+        setUserId(data.id_usuario);
+        setUserNombre(data.nombre);
+
+        await AsyncStorage.setItem("userToken", data.token);
+        await AsyncStorage.setItem("userRole", data.rol);
+        await AsyncStorage.setItem("userId", String(data.id_usuario));
+        await AsyncStorage.setItem("userNombre", data.nombre);
+
+        return { ok: true };
+      }
+    } catch (error) {
+      console.log("[login] ERROR:", error?.message);
+      return { ok: false, message: error?.message || "Error en login" };
+    } 
+    finally {
+      setUserLoading(false);
+    }
+  };
+  
   const saveUser = (user) => {
     setState((prev) => {
       const exists = prev.users.find((u) => u.id === user.id);
@@ -651,12 +695,67 @@ const egresarItemPartial = async ({ id, bodegaId, cantidad }) => {
     return { ok: true };
   };
 
-  const logout = () => {
-    setState((prev) => ({
-      ...prev,
-      currentUser: null,
-    }));
+  const logout = async () => {
+    setUserLoading(true);
+    try {
+      setUserToken(null);
+      setUserRole(null);
+      setUserId(null);
+      setUserNombre(null);
+      await AsyncStorage.removeItem("userToken");
+      await AsyncStorage.removeItem("userRole");
+      await AsyncStorage.removeItem("userId");
+      await AsyncStorage.removeItem("userNombre");
+      setState((prev) => ({
+        ...prev,
+        currentUser: null,
+      }));
+      
+    } catch (error) {
+      console.log("[logout] ERROR:", error?.message);
+    } finally {
+      setUserLoading(false);
+    }
   };
+
+  const isUserLoggedIn = async () => {
+    console.log("Me ejecutó isUserLoggedIn");
+    try {
+      setUserLoading(true);
+      let userToken = await AsyncStorage.getItem("userToken");
+      let userRole = await AsyncStorage.getItem("userRole");
+      let userId = await AsyncStorage.getItem("userId");
+      let userNombre = await AsyncStorage.getItem("userNombre");
+
+      if (userToken) {
+        const decodeToken = jwtDecode(userToken);
+        const isExpired = decodeToken.exp < Date.now() / 1000;
+        if (isExpired) {
+          await logout();
+          return;
+        } else {
+          if (!userId){
+            console.log("Sesión inválida: falta userId");
+            await logout();
+            return;
+          }
+          setUserToken(userToken);
+          setUserRole(userRole);
+          setUserId(userId);
+          setUserNombre(userNombre);
+        }
+      }
+    } catch (error) {
+      console.log("[isUserLoggedIn] ERROR:", error?.message);
+      logout();
+    } finally {
+      setUserLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    isUserLoggedIn();
+  }, []);
 
   // ---------- Valor de contexto ----------
 
@@ -697,8 +796,14 @@ const egresarItemPartial = async ({ id, bodegaId, cantidad }) => {
     loginAsDemo,
     loginWithCredentials,
     logout,
+    login,
+    userToken,
+    userRole,
+    userId,
+    userNombre,
+    userLoading,
   }),
-  [state, reloadMovimientos]
+  [state, reloadMovimientos, userToken, userRole, userId, userNombre, userLoading]
 );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

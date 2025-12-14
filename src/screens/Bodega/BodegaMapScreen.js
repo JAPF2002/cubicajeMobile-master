@@ -76,6 +76,8 @@ export default function BodegaMapScreen({ route, navigation }) {
     [bodegas, bodegaId, bodegaFromParams]
   );
 
+  console.log("Llamando desde la ",bodega, "\n")
+
   const anchoM = Number(bodega?.ancho ?? 0) || 0;
   const largoM = Number(bodega?.largo ?? 0) || 0;
 
@@ -246,6 +248,7 @@ export default function BodegaMapScreen({ route, navigation }) {
 
     try {
       await saveBodega({
+        ciudad: bodega.id_ciudad,
         ...bodega,
         layout: {
           ancho: anchoTablero,

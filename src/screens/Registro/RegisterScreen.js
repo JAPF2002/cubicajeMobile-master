@@ -7,9 +7,11 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
+  Alert,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { useApp } from "../../store";
+import { saveNewUser } from "../../features/api";
 
 const COLORS = {
   bg: "#020817",
@@ -57,80 +59,66 @@ export default function RegisterScreen() {
     return "";
   };
 
-  // RUT: solo números, sin DV (máx 8 dígitos)
-  const onChangeRut = (v) => {
-    const onlyDigits = (v || "").replace(/\D/g, "").slice(0, 8);
-    setRut(onlyDigits);
-  };
-
   const goToLogin = () => {
     navigation.goBack(); // volvemos al login
   };
 
-  const handleRegister = () => {
+  const handleNewUser = async() => {
+    console.log("Entre")
     setError("");
     setOkMsg("");
 
-    if (!nombre.trim() || !rut.trim()) {
+    if (!nombre.trim() || !rut.trim() || !correo.trim()) {
       setError("Completa nombre y RUT.");
       return;
     }
-    if (rut.length < 7 || rut.length > 8) {
-      setError("El RUT debe ser solo el número sin DV.");
-      return;
-    }
-    if (!correo.trim()) {
-      setError("Debes ingresar un correo.");
-      return;
-    }
-
-    // validar que el correo no exista ya
-    const email = correo.trim().toLowerCase();
-    const emailExists = users.some(
-      (u) => (u.correo || "").toLowerCase() === email
-    );
-    if (emailExists) {
-      setError("Ya existe un usuario con ese correo.");
-      return;
-    }
-
     if (!password || !confirm) {
-      setError("Debes ingresar y confirmar la contraseña.");
-      return;
+    setError("Debes ingresar y confirmar la contraseña.");
+    return;
     }
     if (password !== confirm) {
       setError("Las contraseñas no coinciden.");
       return;
     }
-    const pwdError = validatePassword(password);
-    if (pwdError) {
-      setError(pwdError);
-      return;
+     const pwdError = validatePassword(password);
+     if (pwdError) {
+       setError(pwdError);
+       return;
+     }
+    try {
+      const newUser = {
+        nombre: nombre.trim(),
+        rut: rut.trim(),
+        correo: correo,
+        password: password.trim(),
+      }
+      console.log("Entre")
+      const resp = await saveNewUser(newUser);
+      console.log(resp);
+      
+      if (resp.error) {
+        setError(resp.authMensaje || "No se pudo crear el usuario. Intenta nuevamente.");
+        Alert.alert(resp.authMensaje || "No se pudo crear el usuario. Intenta nuevamente.")
+        return;
+      } else {
+        Alert.alert("Éxito", "Cuenta creada. Ahora puedes iniciar sesión.");
+          setOkMsg("Cuenta creada. Ahora puedes iniciar sesión.");
+          setNombre("");
+          setRut("");
+          setCorreo("");
+          setPassword("");
+          setConfirm("");
+
+          setTimeout(() => {
+            setOkMsg("");
+            goToLogin();
+          }, 900);
+      }
+    } catch (error) {
+      console.log(error);
+      Alert.alert("Error", "No se pudo crear el usuario. Intenta nuevamente.");
     }
-
-    // Guardar usuario como EMPLEADO activo en el store
-    saveUser({
-      nombre: nombre.trim(),
-      rut: rut.trim(),
-      correo: email,
-      password: password.trim(),
-      role: "empleado",
-      rol: "empleado",
-      active: true,
-    });
-
-    setOkMsg("Cuenta creada. Ahora puedes iniciar sesión.");
-    setNombre("");
-    setRut("");
-    setCorreo("");
-    setPassword("");
-    setConfirm("");
-
-    setTimeout(() => {
-      setOkMsg("");
-      goToLogin();
-    }, 900);
-  };
+  }
 
   const RuleLine = ({ ok, text }) => (
     <View style={styles.ruleRow}>
@@ -186,13 +174,13 @@ export default function RegisterScreen() {
         <TextInput
           style={styles.input}
           value={rut}
-          onChangeText={onChangeRut}
-          keyboardType="number-pad"
-          placeholder="Ej: 12345678"
+          onChangeText={setRut}
+          keyboardType="default"
+          placeholder="Ej: 12345678-9"
           placeholderTextColor={COLORS.textSoft}
         />
         <Text style={styles.helper}>
-          Sin puntos, sin guion y sin dígito verificador (DV).
+          Sin puntos, con guion y con dígito verificador (DV).
         </Text>
 
         <Text style={styles.label}>Correo</Text>
@@ -243,7 +231,7 @@ export default function RegisterScreen() {
 
         <TouchableOpacity
           style={[styles.btn, styles.btnPrimary, styles.btnRaised]}
-          onPress={handleRegister}
+          onPress={handleNewUser}
         >
           <Text style={styles.btnPrimaryText}>Crear cuenta</Text>
         </TouchableOpacity>

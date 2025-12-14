@@ -69,6 +69,13 @@ const getTypes = async () =>
 
 /* ------------ BODEGAS (msApiCubicaje) ------------ */
 
+const getCiudades = async () => {
+  const url = `${Config.API_URL}/api/bodegas/ciudades`;
+  console.log("[API] getCiudades URL =>", url);
+  const response = await reqHelper(url, "get");
+  return response
+}
+
 const getBodegas = async () => {
   const url = `${Config.API_URL}/api/bodegas`;
   console.log("[API] getBodegas URL =>", url);
@@ -161,10 +168,10 @@ const insertSolicitud = async (data) => {
   return await reqHelper(url, "post", data);
 };
 
-const updateSolicitudEstado = async (id_solicitud, estado) => {
+const updateSolicitudEstado = async (id_solicitud, estado, id_usuario) => {
   const url = `${Config.API_URL}/api/solicitudes/${id_solicitud}/estado`;
   console.log("[API] updateSolicitudEstado URL =>", url, "estado:", estado);
-  return await reqHelper(url, "patch", { estado });
+  return await reqHelper(url, "patch", { estado, id_usuario });
 };
 
 /* ------------ MOVIMIENTOS (msApiCubicaje) ------------ */
@@ -185,6 +192,55 @@ const getMovimientos = async (opts = {}) => {
   console.log("[API] getMovimientos URL =>", url);
   return await reqHelper(url, "get");
 };
+
+/* ------------ USUARIOS  ------------ */
+const loginUser = async (credentials) => {
+  const url = `${Config.API_URL}/api/usuario/login`;
+  const response = await reqHelper(url, "post", credentials);
+  return response;
+}
+
+const getUsuarios = async () => {
+  const url = `${Config.API_URL}/api/usuario`;
+  const response = await reqHelper(url, "get");
+  return response;
+}
+
+const changeUserState = async (id_usuario) => {
+  const url = `${Config.API_URL}/api/usuario/cambiar_estado/${id_usuario}`;
+  const response = await reqHelper(url, "patch");
+  return response;
+}
+
+const changeUserRole = async (id_usuario, new_role) => {
+  const url = `${Config.API_URL}/api/usuario/asignar_rol/${id_usuario}`;
+  const response = await reqHelper(url, "patch", { rol: new_role });
+  return response;
+}
+
+const saveNewUser = async (userData) => {
+  const url = `${Config.API_URL}/api/usuario/crear`;
+  const response = await reqHelper(url, "post", userData);
+  return response;
+}
+
+const getUserById = async (id_usuario) => {
+  const url = `${Config.API_URL}/api/usuario/${id_usuario}`;
+  const response = await reqHelper(url, "get");
+  return response;
+}
+
+const updateUserById = async (id_usuario, userData) => {
+  const url = `${Config.API_URL}/api/usuario/actualizar_datos/${id_usuario}`;
+  const response = await reqHelper(url, "patch", userData);
+  return response;
+}
+
+const updatePassword = async (passwordData) => {
+  const url = `${Config.API_URL}/api/usuario/cambiar_password`;
+  const response = await reqHelper(url, "patch", passwordData);
+  return response;
+}
 
 /* ------------ EXPORTS ------------ */
 export {
@@ -219,6 +275,7 @@ export {
   recubicarBodegaPrioridadApi,
   getBodegaUbicacionesApi,
   compactarBodegaTetrisApi,
+  getCiudades,
 
   // Categorías
   getCategories,
@@ -230,4 +287,14 @@ export {
 
   // Movimientos
   getMovimientos,
+
+  // Usuarios
+  loginUser,
+  getUsuarios,
+  changeUserState,
+  changeUserRole,
+  saveNewUser,
+  getUserById,
+  updateUserById,
+  updatePassword
 };

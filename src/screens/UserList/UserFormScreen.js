@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { useApp } from "../../store";
+import { saveNewUser } from "../../features/api";
 
 const COLORS = {
   bg: "#f8fafc",
@@ -69,8 +70,8 @@ export default function UserFormScreen(props) {
       setForm({
         id: null,
         nombre: "",
-        rut: "",
-        correo: "",
+        rut: "44444444-4",
+        correo: "topi@test.cl",
         password: "",
         rol: "empleado",
         active: true,
@@ -137,6 +138,29 @@ export default function UserFormScreen(props) {
     // ⬅️ después de guardar, volvemos a la lista
     goUsers();
   };
+
+  const handleNewUser = async () => {
+    try {
+      const newUser = {
+        nombre: form.nombre.trim(),
+        rut: form.rut.trim(),
+        correo: form.correo.trim(),
+        password: form.password.trim(),
+        rol: form.rol,
+        active: form.active
+      }
+      const resp = await saveNewUser(newUser);
+      console.log("RESPUESTA CREAR USUARIO =>", resp);
+      if (!resp.error) {
+        goUsers();
+      }
+      else {
+        Alert.alert("Error", resp.authMensaje || "No se pudo crear el usuario. Intenta nuevamente.");
+      }
+    } catch (error) {
+      Alert.alert("Error", "No se pudo crear el usuario. Intenta nuevamente.");
+    }
+  }
 
   const actionLabel = form.id ? "Guardar cambios" : "Crear usuario";
 
@@ -291,14 +315,26 @@ export default function UserFormScreen(props) {
           <Text style={styles.bottomBtnText}>Usuarios</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[styles.bottomBtn, styles.bottomBtnActive]}
-          onPress={handleSave}
-        >
-          <Text style={[styles.bottomBtnText, styles.bottomBtnTextActive]}>
-            {actionLabel}
-          </Text>
-        </TouchableOpacity>
+        {
+          actionLabel === "Crear usuario" ? (
+            <TouchableOpacity
+              style={[styles.bottomBtn, styles.bottomBtnActive]}
+              onPress={handleNewUser}
+            >
+              <Text style={[styles.bottomBtnText, styles.bottomBtnTextActive]}>
+                {actionLabel}
+              </Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={[styles.bottomBtn, styles.bottomBtnActive]}
+              onPress={null}>
+              <Text style={[styles.bottomBtnText, styles.bottomBtnTextActive]}>
+                {actionLabel}
+              </Text>
+            </TouchableOpacity>
+          )
+        }
       </View>
     </View>
   );

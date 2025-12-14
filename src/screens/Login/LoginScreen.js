@@ -22,19 +22,19 @@ const COLORS = {
 
 export default function LoginScreen() {
   const navigation = useNavigation();
-  const { loginAsDemo, loginWithCredentials } = useApp();
+  const { loginAsDemo, loginWithCredentials, login } = useApp();
 
-  const [correo, setCorreo] = useState("admin@demo.cl");
-  const [password, setPassword] = useState("admin123");
+  const [rut, setRut] = useState("21191653-2");
+  const [password, setPassword] = useState("Subzero,2002");
   const [error, setError] = useState("");
 
   const irAlMain = () => {
     navigation.replace("Main");
   };
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
     setError("");
-    const res = loginWithCredentials(correo, password);
+    const res = await login(rut, password);
     if (!res.ok) {
       setError(res.error || "No se pudo iniciar sesión.");
       return;
@@ -57,17 +57,17 @@ export default function LoginScreen() {
       <View style={styles.card}>
         <Text style={styles.title}>Ingreso</Text>
         <Text style={styles.subtitle}>
-          Usa tu correo y contraseña para acceder.
+          Usa tu Rut y contraseña para acceder.
         </Text>
 
-        <Text style={styles.label}>Correo</Text>
+        <Text style={styles.label}>Rut</Text>
         <TextInput
           style={styles.input}
-          value={correo}
-          onChangeText={setCorreo}
+          value={rut}
+          onChangeText={setRut}
           autoCapitalize="none"
-          keyboardType="email-address"
-          placeholder="ej: admin@demo.cl"
+          // keyboardType="email-address"
+          placeholder="ej: 11111111-1"
           placeholderTextColor={COLORS.textSoft}
         />
 
@@ -92,21 +92,23 @@ export default function LoginScreen() {
 
         <View style={styles.divider} />
 
-        <Text style={styles.helper}>Demo rápida:</Text>
+
 
         <View style={styles.quickRow}>
-          <TouchableOpacity
-            style={styles.quickBtn}
-            onPress={() => quickLogin("admin")}
-          >
-            <Text style={styles.quickText}>Admin Demo</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.quickBtn}
-            onPress={() => quickLogin("empleado")}
-          >
-            <Text style={styles.quickText}>Empleado Demo</Text>
-          </TouchableOpacity>
+<TouchableOpacity
+  style={[styles.quickBtn, { display: "none" }]}
+  onPress={() => quickLogin("admin")}
+>
+  <Text style={styles.quickText}>Admin Demo</Text>
+</TouchableOpacity>
+
+<TouchableOpacity
+  style={[styles.quickBtn, { display: "none" }]}
+  onPress={() => quickLogin("empleado")}
+>
+  <Text style={styles.quickText}>Empleado Demo</Text>
+</TouchableOpacity>
+
         </View>
 
         <TouchableOpacity style={styles.linkBtn} onPress={goToRegister}>
@@ -211,10 +213,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   linkText: {
-    fontSize: 10,
+    fontSize: 14,
     color: COLORS.textSoft,
   },
   linkTextStrong: {
+    fontSize: 14,
     color: COLORS.primary,
     fontWeight: "600",
   },

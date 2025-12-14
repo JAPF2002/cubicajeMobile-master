@@ -8,6 +8,8 @@ import {
   TouchableOpacity,
   StyleSheet,
   Alert,
+  Linking,
+  Platform,
 } from "react-native";
 import { useApp } from "../../store";
 
@@ -15,18 +17,19 @@ function normTipo(tipo) {
   const t = String(tipo || "").toLowerCase();
 
   // transferencias
-  if (t === "traslado" || t === "transfer" || t === "move" || t === "transferencia") return "transfer";
+  if (t === "traslado" || t === "transfer" || t === "move" || t === "transferencia")
+    return "transfer";
 
   // ingresos
-  if (t === "ingreso" || t === "entrada" || t === "in" || t === "add" || t === "ajuste_mas") return "in";
+  if (t === "ingreso" || t === "entrada" || t === "in" || t === "add" || t === "ajuste_mas")
+    return "in";
 
   // egresos
-  if (t === "egreso" || t === "salida" || t === "out" || t === "remove" || t === "ajuste_menos") return "out";
+  if (t === "egreso" || t === "salida" || t === "out" || t === "remove" || t === "ajuste_menos")
+    return "out";
 
   return t;
 }
-
-
 
 function getDate(m) {
   const raw = m?.fecha || m?.createdAt;
@@ -80,7 +83,8 @@ const COLORS = {
 
 function TypeChip({ tipo }) {
   const t = normTipo(tipo);
-  const label = t === "transfer" ? "Traslado" : t === "in" ? "Ingreso" : t === "out" ? "Salida" : "Movimiento";
+  const label =
+    t === "transfer" ? "Traslado" : t === "in" ? "Ingreso" : t === "out" ? "Salida" : "Movimiento";
   const bg = t === "transfer" ? COLORS.info : t === "in" ? COLORS.success : COLORS.danger;
 
   return (
@@ -99,54 +103,63 @@ function QtyChip({ tipo, cantidad }) {
 
   return (
     <View style={[st.qtyChip, { backgroundColor: bg }]}>
-      <Text style={[st.qtyChipText, { color: fg }]}>{sign}{qty}</Text>
+      <Text style={[st.qtyChipText, { color: fg }]}>
+        {sign}
+        {qty}
+      </Text>
     </View>
   );
 }
 
 export default function InformeScreen({ navigation }) {
-  const { bodegas = [], movimientos = [] } = useApp();
+  // ✅ Solo agregué userToken aquí (para PDF)
+  const { bodegas = [], movimientos = [], userToken } = useApp();
 
- // ✅ Navega hacia arriba hasta encontrar una ruta con ese nombre
-const navigateUpTo = (routeName, params) => {
-  let nav = navigation;
-  while (nav) {
-    const names = nav.getState?.()?.routeNames || [];
-    if (names.includes(routeName)) {
-      nav.navigate(routeName, params);
-      return true;
+  // ✅ (esto ya lo estabas usando en bodegaNombre; si ya lo tenías en tu archivo, puedes dejar tu versión)
+  const bodegasById = useMemo(() => {
+    const map = {};
+    bodegas.forEach((b) => (map[b.id] = b));
+    return map;
+  }, [bodegas]);
+
+  // ✅ Navega hacia arriba hasta encontrar una ruta con ese nombre
+  const navigateUpTo = (routeName, params) => {
+    let nav = navigation;
+    while (nav) {
+      const names = nav.getState?.()?.routeNames || [];
+      if (names.includes(routeName)) {
+        nav.navigate(routeName, params);
+        return true;
+      }
+      nav = nav.getParent?.();
     }
-    nav = nav.getParent?.();
-  }
-  return false;
-};
+    return false;
+  };
 
-const goToMenu = () => {
-  // AppTab tiene id="AppTabs"
-  const tabs = navigation.getParent?.("AppTabs");
-  if (tabs?.navigate) return tabs.navigate("Menu");
+  const goToMenu = () => {
+    // AppTab tiene id="AppTabs"
+    const tabs = navigation.getParent?.("AppTabs");
+    if (tabs?.navigate) return tabs.navigate("Menu");
 
-  // fallback (por si esta screen no cuelga directo del Tab)
-  return navigation.navigate("Main", { screen: "Menu" });
-};
+    // fallback (por si esta screen no cuelga directo del Tab)
+    return navigation.navigate("Main", { screen: "Menu" });
+  };
 
+  const goToMovimientos = () => {
+    // 1) intenta dentro del stack actual
+    const names = navigation.getState?.()?.routeNames || [];
+    if (names.includes("MovimientosList")) return navigation.navigate("MovimientosList");
+    if (names.includes("Movimientos")) return navigation.navigate("Movimientos");
 
-const goToMovimientos = () => {
-  // 1) intenta dentro del stack actual
-  const names = navigation.getState?.()?.routeNames || [];
-  if (names.includes("MovimientosList")) return navigation.navigate("MovimientosList");
-  if (names.includes("Movimientos")) return navigation.navigate("Movimientos");
+    // 2) fallback: volver atrás (normalmente Informe -> Movimientos)
+    if (navigation.canGoBack?.()) return navigation.goBack();
 
-  // 2) fallback: volver atrás (normalmente Informe -> Movimientos)
-  if (navigation.canGoBack?.()) return navigation.goBack();
+    // 3) último fallback: buscar en padres
+    if (navigateUpTo("MovimientosList")) return;
+    if (navigateUpTo("Movimientos")) return;
 
-  // 3) último fallback: buscar en padres
-  if (navigateUpTo("MovimientosList")) return;
-  if (navigateUpTo("Movimientos")) return;
-
-  Alert.alert("Navegación", "No encontré la ruta de Movimientos.");
-};
-
+    Alert.alert("Navegación", "No encontré la ruta de Movimientos.");
+  };
 
   const bodegaNombre = (id) => bodegasById?.[id]?.nombre || "—";
 
@@ -204,9 +217,16 @@ const goToMovimientos = () => {
     rangeMovs.forEach((m) => {
       const t = normTipo(m?.tipo);
       const qty = Math.max(0, Number(m?.cantidad) || 0);
-      if (t === "in") { s.inCount++; s.inTot += qty; }
-      else if (t === "out") { s.outCount++; s.outTot += qty; }
-      else if (t === "transfer") { s.trCount++; s.trTot += qty; }
+      if (t === "in") {
+        s.inCount++;
+        s.inTot += qty;
+      } else if (t === "out") {
+        s.outCount++;
+        s.outTot += qty;
+      } else if (t === "transfer") {
+        s.trCount++;
+        s.trTot += qty;
+      }
     });
     return s;
   }, [rangeMovs]);
@@ -219,6 +239,47 @@ const goToMovimientos = () => {
       return `Bodega origen: ${from}\nBodega destino: ${to}`;
     }
     return m?.bodega || bodegaNombre(m?.bodegaId);
+  };
+
+  // =========================
+  // ✅ DESCARGA PDF (TICKET)
+  // =========================
+  const API_BASE = Platform.OS === "android" ? "http://10.0.2.2:3000" : "http://localhost:3000";
+
+  const downloadPdf = async () => {
+    try {
+      if (!userToken) {
+        Alert.alert("Sesión", "No encontré token. Inicia sesión de nuevo.");
+        return;
+      }
+
+      // 1) pedir ticket (endpoint protegido)
+      const r = await fetch(`${API_BASE}/api/movimientos/informe/ticket`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${userToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({}),
+      });
+
+      const j = await r.json().catch(() => null);
+      if (!r.ok || j?.error || !j?.ticket) {
+        throw new Error(j?.body || j?.message || "No pude generar el ticket");
+      }
+
+      // 2) link al PDF (sin headers; el ticket va por query)
+  const url =
+    `${API_BASE}/api/movimientos/informe/pdf` +
+    `?ticket=${encodeURIComponent(j.ticket)}` +
+    `&start=${encodeURIComponent(start.toISOString())}` +
+    `&end=${encodeURIComponent(end.toISOString())}`;
+
+  await Linking.openURL(url);
+} catch (e) {
+  console.log("[Informe] downloadPdf error:", e?.message);
+  Alert.alert("Error", "No puedo abrir el enlace del PDF.");
+}
   };
 
   return (
@@ -242,9 +303,7 @@ const goToMovimientos = () => {
               style={[st.rangePill, active && st.rangePillA]}
               onPress={() => setRange(x.k)}
             >
-              <Text style={[st.rangePillText, active && st.rangePillTextA]}>
-                {x.l}
-              </Text>
+              <Text style={[st.rangePillText, active && st.rangePillTextA]}>{x.l}</Text>
             </TouchableOpacity>
           );
         })}
@@ -302,30 +361,24 @@ const goToMovimientos = () => {
             </View>
           );
         }}
-        ListEmptyComponent={
-          <Text style={st.emptyText}>No hay movimientos en este rango.</Text>
-        }
+        ListEmptyComponent={<Text style={st.emptyText}>No hay movimientos en este rango.</Text>}
         contentContainerStyle={{ paddingBottom: 210 }}
       />
 
       <View style={st.downloadWrap}>
-        <TouchableOpacity
-          style={st.downloadBtn}
-          onPress={() => Alert.alert("Descarga", "Pronto: descarga del informe.")}
-        >
+        <TouchableOpacity style={st.downloadBtn} onPress={downloadPdf}>
           <Text style={st.downloadBtnText}>Descargar</Text>
         </TouchableOpacity>
       </View>
 
       <View style={st.bottomBar}>
-<TouchableOpacity style={st.bottomBtn} onPress={goToMenu}>
-  <Text style={st.bottomBtnText}>Menú principal</Text>
-</TouchableOpacity>
+        <TouchableOpacity style={st.bottomBtn} onPress={goToMenu}>
+          <Text style={st.bottomBtnText}>Menú principal</Text>
+        </TouchableOpacity>
 
-<TouchableOpacity style={st.bottomBtn} onPress={goToMovimientos}>
-  <Text style={st.bottomBtnText}>Movimientos</Text>
-</TouchableOpacity>
-
+        <TouchableOpacity style={st.bottomBtn} onPress={goToMovimientos}>
+          <Text style={st.bottomBtnText}>Movimientos</Text>
+        </TouchableOpacity>
 
         <TouchableOpacity style={[st.bottomBtn, st.bottomBtnActive]} disabled>
           <Text style={[st.bottomBtnText, st.bottomBtnTextActive]}>Informe</Text>

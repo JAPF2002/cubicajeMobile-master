@@ -98,12 +98,12 @@ export default function BodegaItemsList({
         )}
       </Pressable>
 
-      {/* ✅ PARTE 12: Compactación tetris */}
+      {/* Compactación tetris */}
       <View style={styles.actionsRow}>
         <Pressable
           onPress={onPreviewCompactacion}
           disabled={disabled}
-          style={[styles.secondaryBtn, disabled && styles.actionBtnDisabled]}
+          style={[styles.secondaryBtn, disabled && styles.actionBtnDisabled, { display: "none" }]}
         >
           {loadingTetris ? (
             <ActivityIndicator />
@@ -111,6 +111,7 @@ export default function BodegaItemsList({
             <Text style={styles.secondaryText}>Preview compactación</Text>
           )}
         </Pressable>
+
 
         <Pressable
           onPress={onEjecutarCompactacion}

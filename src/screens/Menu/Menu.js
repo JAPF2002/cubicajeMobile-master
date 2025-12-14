@@ -6,10 +6,9 @@ import { useApp } from "../../store";
 
 export default function Menu() {
   const navigation = useNavigation();
-  const { currentUser, logout } = useApp();
-
-  const userName = currentUser?.nombre || currentUser?.name || "Invitado";
-  const roleKey = currentUser?.role || currentUser?.rol || "invitado";
+  const { currentUser, logout, userNombre, userRole, userLoading} = useApp();
+  const userName = currentUser?.nombre || currentUser?.name || userNombre;
+  const roleKey = currentUser?.role || currentUser?.rol || userRole;
 
   const roleLabel =
     roleKey === "admin"
